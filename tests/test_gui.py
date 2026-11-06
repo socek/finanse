@@ -344,6 +344,84 @@ def test_new_transaction_dialog_chooses_wallet(db, errors):
     assert get_wallet(db, euro)["balance_cents"] == -300
 
 
+def _new_transaction_dialog(db):
+    return TransactionDialog(db, get_wallet(db, create_wallet(db, "A")))
+
+
+def _fill_product(dialog, row, name, price="3"):
+    dialog.table.cellWidget(row, dialog.NAME).setText(name)
+    dialog.table.cellWidget(row, dialog.PRICE).setText(price)
+
+
+def test_single_product_name_is_suggested_and_used_as_description(db, errors):
+    dialog = _new_transaction_dialog(db)
+    assert dialog.description.placeholderText() == "np. Zakupy spożywcze"
+    _fill_product(dialog, 0, "  Kawa ")
+    assert dialog.description.placeholderText() == "Kawa"
+    assert dialog.description.text() == ""  # to tylko propozycja
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    saved = get_transaction(db, dialog.transaction_id)
+    assert saved["description"] == "Kawa"
+    assert saved["rows"][0]["name"] == "Kawa"
+    assert errors == []
+
+
+def test_typed_description_wins_over_suggestion(db, errors):
+    dialog = _new_transaction_dialog(db)
+    _fill_product(dialog, 0, "Kawa")
+    dialog.description.setText("Zakupy")
+    dialog.accept()
+    assert get_transaction(db, dialog.transaction_id)["description"] == "Zakupy"
+
+
+def test_blank_description_counts_as_missing(db, errors):
+    dialog = _new_transaction_dialog(db)
+    _fill_product(dialog, 0, "Kawa")
+    dialog.description.setText("   ")
+    dialog.accept()
+    assert get_transaction(db, dialog.transaction_id)["description"] == "Kawa"
+
+
+def test_no_suggestion_for_many_products_or_no_name(db, errors):
+    dialog = _new_transaction_dialog(db)
+    _fill_product(dialog, 0, "Kawa")
+    dialog._add_row({"name": "Ser", "category": None, "quantity": "1", "price": "5"})
+    dialog._update_totals()
+    assert dialog.description.placeholderText() == "np. Zakupy spożywcze"
+    dialog.accept()
+    assert any("Podaj opis" in error for error in errors)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+
+    # Po usunięciu drugiego produktu propozycja wraca.
+    dialog._remove_row(dialog.table.cellWidget(1, dialog.REMOVE))
+    assert dialog.description.placeholderText() == "Kawa"
+
+    # Pusty wiersz się nie liczy, a produkt bez nazwy niczego nie proponuje.
+    dialog._add_row({"name": "", "category": None, "quantity": "1", "price": ""})
+    dialog._update_totals()
+    assert dialog.description.placeholderText() == "Kawa"
+    dialog._remove_row(dialog.table.cellWidget(1, dialog.REMOVE))
+    _fill_product(dialog, 0, "")
+    assert dialog.suggested_description() == ""
+    assert dialog.description.placeholderText() == "np. Zakupy spożywcze"
+
+
+def test_suggestion_only_in_new_transaction(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet)
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    edit.description.clear()
+    assert edit.suggested_description() == ""
+    edit.accept()
+    assert any("Podaj opis" in error for error in errors)
+    assert get_transaction(db, transaction)["description"] == "Zakupy"
+
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
+    assert payment.suggested_description() == ""
+
+
 def test_saved_transaction_makes_its_wallet_visible(db, errors, monkeypatch):
     first = create_wallet(db, "A")
     second = create_wallet(db, "B")

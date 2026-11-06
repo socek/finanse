@@ -225,6 +225,9 @@ def _kind_combo(selected):
     return combo
 
 
+DESCRIPTION_HINT = "np. Zakupy spożywcze"
+
+
 class TransactionDialog(_ProductRowsMixin, _SavingDialog):
     ACCEPT_TEXT = "Zapisz"
 
@@ -245,7 +248,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.occurred_on = common.date_edit(data["occurred_on"])
         self.description = QLineEdit(data["description"])
         self.description.setMaxLength(200)
-        self.description.setPlaceholderText("np. Zakupy spożywcze")
+        self.description.setPlaceholderText(DESCRIPTION_HINT)
 
         top = QFormLayout()
         # Portfel wybiera się tylko przy nowej transakcji; płatność ma go z szablonu.
@@ -287,11 +290,30 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
             return self.currencies.get(self.wallet_combo.currentData(), "")
         return self.wallet["currency"]
 
+    def suggested_description(self):
+        """Nazwa jedynego produktu nowej transakcji; pusty tekst, gdy jej nie ma."""
+        if self.wallet_combo is None:
+            return ""
+        filled = [
+            row
+            for row in self.rows()
+            if row["name"].strip()
+            or row["price"].strip()
+            or row["quantity"].strip() not in ("", "1")
+        ]
+        return filled[0]["name"].strip() if len(filled) == 1 else ""
+
+    def _update_totals(self):
+        super()._update_totals()
+        self.description.setPlaceholderText(
+            self.suggested_description() or DESCRIPTION_HINT
+        )
+
     def values(self):
         return (
             self.kind.currentData(),
             common.iso_date(self.occurred_on),
-            self.description.text(),
+            self.description.text().strip() or self.suggested_description(),
             self.rows(),
         )
 
