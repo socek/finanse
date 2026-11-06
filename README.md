@@ -51,6 +51,9 @@ Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `instance/back
 i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
 `instance/finanse.db`.
 
+Zakładka **Pliki** pokazuje pliki z katalogu bazy i podkatalogu `backups`, ich rozmiar
+oraz sumy dla każdej grupy i całości.
+
 ## Import z banku
 
 Wybierz portfel, kliknij **Import CSV** i wskaż plik z banku. Aplikacja rozpoznaje
