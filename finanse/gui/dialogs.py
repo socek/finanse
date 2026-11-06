@@ -1,6 +1,7 @@
 """Formularze: portfel, transakcja i przelew."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -318,6 +319,9 @@ DESCRIPTION_HINT = "np. Zakupy spożywcze"
 
 class TransactionDialog(_ProductRowsMixin, _SavingDialog):
     ACCEPT_TEXT = "Zapisz (Shift+Enter)"
+    # Data ostatnio dodanej transakcji; żyje tylko do zamknięcia aplikacji, żeby wygodnie
+    # dopisywać kilka transakcji z przeszłości.
+    remembered_date = None
 
     def __init__(self, db, wallet, transaction_id=None, parent=None, initial=None):
         super().__init__(parent)
@@ -333,7 +337,18 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         )
 
         self.kind = _kind_combo(data["kind"])
-        self.occurred_on = common.date_edit(data["occurred_on"])
+        is_new = transaction_id is None and initial is None
+        self.occurred_on = common.date_edit(
+            TransactionDialog.remembered_date if is_new else data["occurred_on"]
+        )
+        self.today_button = QPushButton("Dzisiaj (Ctrl+T)")
+        self.today_button.setAutoDefault(False)
+        self.today_button.clicked.connect(self.set_today)
+        self.today_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        self.today_shortcut.activated.connect(self.set_today)
+        date_row = QHBoxLayout()
+        date_row.addWidget(self.occurred_on, 1)
+        date_row.addWidget(self.today_button)
         self.description = QLineEdit(data["description"])
         self.description.setMaxLength(200)
         self.description.setPlaceholderText(DESCRIPTION_HINT)
@@ -341,7 +356,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         top = QFormLayout()
         # Portfel wybiera się tylko przy nowej transakcji; płatność ma go z szablonu.
         self.wallet_combo = None
-        if transaction_id is None and initial is None:
+        if is_new:
             self.wallet_combo = QComboBox()
             self.currencies = {}
             for item in list_wallets(db):
@@ -353,7 +368,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
                 )
             top.addRow("Portfel", self.wallet_combo)
         top.addRow("Rodzaj", self.kind)
-        top.addRow("Data", self.occurred_on)
+        top.addRow("Data", date_row)
         top.addRow("Opis", self.description)
 
         bottom = self._product_section(data["rows"], list_categories(db))
@@ -367,6 +382,9 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         if self.wallet_combo is not None:
             self.wallet_combo.currentIndexChanged.connect(self._update_totals)
         self._update_totals()
+
+    def set_today(self):
+        self.occurred_on.setDate(QDate.currentDate())
 
     def selected_wallet_id(self):
         if self.wallet_combo is not None:
@@ -411,6 +429,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
             self.transaction_id = create_transaction(
                 self.db, self.selected_wallet_id(), *self.values()
             )
+            TransactionDialog.remembered_date = common.iso_date(self.occurred_on)
         else:
             update_transaction(self.db, self.transaction_id, *self.values())
 

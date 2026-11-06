@@ -1477,6 +1477,107 @@ def test_new_transaction_button_shows_shortcut(db, errors):
     assert "Ctrl+N" in WalletsTab(db).new_transaction_button.text()
 
 
+def _save_new_transaction(db, wallet, date=None):
+    dialog = TransactionDialog(db, get_wallet(db, wallet))
+    if date:
+        dialog.occurred_on.setDate(date)
+    _fill_product(dialog, 0, "Kawa")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    return dialog
+
+
+def test_new_transaction_remembers_last_saved_date(db, errors):
+    wallet = create_wallet(db, "A")
+    assert TransactionDialog(db, get_wallet(db, wallet)).occurred_on.date() == QDate.currentDate()
+
+    past = QDate(2026, 3, 14)
+    saved = _save_new_transaction(db, wallet, past)
+    assert get_transaction(db, saved.transaction_id)["occurred_on"] == "2026-03-14"
+    assert TransactionDialog(db, get_wallet(db, wallet)).occurred_on.date() == past
+
+    # Kolejna zapisana data zastępuje poprzednią.
+    _save_new_transaction(db, wallet, QDate(2026, 3, 15))
+    assert TransactionDialog(db, get_wallet(db, wallet)).occurred_on.date() == QDate(2026, 3, 15)
+
+
+def test_unsaved_dialogs_do_not_change_remembered_date(db, errors):
+    wallet = create_wallet(db, "A")
+    _save_new_transaction(db, wallet, QDate(2026, 3, 14))
+
+    cancelled = TransactionDialog(db, get_wallet(db, wallet))
+    cancelled.occurred_on.setDate(QDate(2020, 1, 1))
+    cancelled.reject()
+    invalid = TransactionDialog(db, get_wallet(db, wallet))
+    invalid.occurred_on.setDate(QDate(2020, 1, 2))
+    invalid.accept()  # brak produktu, więc zapis się nie udaje
+    assert invalid.result() != QDialog.DialogCode.Accepted
+    assert TransactionDialog(db, get_wallet(db, wallet)).occurred_on.date() == QDate(2026, 3, 14)
+
+
+def test_edit_and_payment_neither_use_nor_change_remembered_date(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet, on="2026-11-05")
+    _save_new_transaction(db, wallet, QDate(2026, 3, 14))
+
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    assert edit.occurred_on.date() == QDate(2026, 11, 5)
+    edit.accept()
+
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
+    assert payment.occurred_on.date() == QDate.currentDate()
+    payment.occurred_on.setDate(QDate(2020, 1, 1))
+    payment.accept()
+    assert payment.result() == QDialog.DialogCode.Accepted
+
+    assert TransactionDialog(db, get_wallet(db, wallet)).occurred_on.date() == QDate(2026, 3, 14)
+
+
+def test_today_button_sets_current_date_in_every_dialog(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet, on="2026-03-14")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    for dialog in (
+        TransactionDialog(db, get_wallet(db, wallet)),
+        TransactionDialog(db, get_wallet(db, wallet), transaction),
+        PaymentDialog(db, get_wallet(db, wallet), recurring),
+    ):
+        dialog.occurred_on.setDate(QDate(2020, 1, 1))
+        dialog.today_button.click()
+        assert dialog.occurred_on.date() == QDate.currentDate()
+        assert dialog.result() != QDialog.DialogCode.Accepted
+    assert "Ctrl+T" in dialog.today_button.text()
+
+
+@pytest.mark.parametrize("field", ["description", "product"])
+def test_ctrl_t_sets_today_without_changing_typed_text(db, errors, field):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    assert QTest.qWaitForWindowActive(dialog)
+    dialog.occurred_on.setDate(QDate(2020, 1, 1))
+    widget = (
+        dialog.description if field == "description"
+        else dialog.table.cellWidget(0, dialog.NAME)
+    )  # fmt: skip
+    widget.setFocus()
+    widget.setText("Tekst")
+    QTest.keyClick(widget, Qt.Key.Key_T, Qt.KeyboardModifier.ControlModifier)
+    assert dialog.occurred_on.date() == QDate.currentDate()
+    assert widget.text() == "Tekst"
+    dialog.close()
+
+
+def test_enter_on_today_button_does_not_save(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _fill_product(dialog, 0, "Kawa")
+    _press(dialog.today_button)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    dialog.close()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:

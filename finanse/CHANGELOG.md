@@ -10,6 +10,8 @@ Pierwsza wersja aplikacji okienkowej.
 - Transakcje z wieloma produktami, także z kategoriami przypisanymi do produktów.
 - Wpisywanie ilości i ceny albo ilości i wartości, z wyliczaniem brakującego pola.
 - Propozycja opisu z nazwy jedynego produktu.
+- Nowa transakcja pamięta ostatnią datę do zamknięcia aplikacji, a przycisk Dzisiaj
+  i Ctrl+T ustawiają bieżący dzień.
 - Ctrl+N otwiera nową transakcję, Enter dodaje produkt, a Shift+Enter zapisuje całość.
 - Przelewy między portfelami, także w różnych walutach.
 - Transakcje cykliczne z opcjonalnymi produktami i licznikiem płatności.

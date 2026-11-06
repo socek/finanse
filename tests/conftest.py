@@ -20,3 +20,12 @@ def db(tmp_path):
 @pytest.fixture(scope="session")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def forget_transaction_date():
+    from finanse.gui.dialogs import TransactionDialog
+
+    TransactionDialog.remembered_date = None
+    yield
+    TransactionDialog.remembered_date = None
