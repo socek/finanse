@@ -1,6 +1,6 @@
 # Historia zmian
 
-## 0.1 (2026-11-06)
+## 0.1 (2026-11-07)
 
 Pierwsza wersja aplikacji okienkowej.
 
@@ -16,12 +16,16 @@ Pierwsza wersja aplikacji okienkowej.
 - Przelewy między portfelami, także w różnych walutach.
 - Transakcje cykliczne z opcjonalnymi produktami i licznikiem płatności.
 - Import wyciągów bankowych z plików CSV z ochroną przed duplikatami.
+- Usuwanie transakcji z menu pod prawym przyciskiem myszy i klawiszem Delete.
 
 ### Listy i raporty
 
 - Listy transakcji i produktów według dni, z sumami przychodów i wydatków.
 - Wybór wielu portfeli i data najnowszej transakcji.
+- Salda portfeli na koniec dnia wybranego w filtrze „Do”.
 - Szukanie po nazwie oraz filtry po dacie, kategorii i kwocie.
+- Przyciski rozwijania i zwijania list.
+- Wyróżnienie pozycji bez kategorii bursztynowym tłem.
 - Raporty miesięczne z wybranych portfeli, z podziałem na kategorie i portfele
   oraz wykresem z 12 miesięcy.
 
@@ -31,3 +35,9 @@ Pierwsza wersja aplikacji okienkowej.
 - Dziennik zmian z zakładką Historia.
 - Kopia bazy przy każdym uruchomieniu.
 - Zakładka Pliki z rozmiarem plików danych.
+
+### Instalacja
+
+- Instalacja przez `pyproject.toml` i polecenie `finanse`.
+- Plik `.desktop` z wpisem w menu programów i klasą okna `finanse`.
+- Zakładka O programie z wersją i historią zmian.

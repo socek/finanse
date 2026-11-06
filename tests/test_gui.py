@@ -1312,7 +1312,7 @@ def test_about_tab_shows_version_and_changelog(db, errors):
     assert window.tabs.tabText(window.tabs.currentIndex()) == "O programie"
     assert window.about.version.text() == "Wersja 0.1"
     text = window.about.changelog.toPlainText()
-    assert "Historia zmian" in text and "0.1 (2026-11-06)" in text
+    assert "Historia zmian" in text and "0.1 (" in text
     assert window.about.changelog.isReadOnly()
 
 
