@@ -1,6 +1,7 @@
 import re
 import sqlite3
 from collections import defaultdict
+from dataclasses import dataclass
 
 from .errors import ValidationError
 from .money import parse_money
@@ -27,6 +28,57 @@ _WALLET_WITH_BALANCE = """
            ), 0) AS balance_cents
     FROM wallets w
 """
+
+
+NO_CATEGORY = 0  # identyfikatory kategorii zaczynają się od 1
+
+
+@dataclass(frozen=True)
+class EntryFilters:
+    """Zawężenie listy operacji; domyślne wartości niczego nie filtrują."""
+
+    text: str = ""
+    category: int | None = None  # None: wszystkie, NO_CATEGORY: bez kategorii
+    min_cents: int | None = None
+    max_cents: int | None = None
+
+    @property
+    def active(self):
+        return self != EntryFilters()
+
+
+def _entry_amount(entry, wallet_id):
+    item = entry["item"]
+    if entry["type"] == "transaction":
+        return item["total_cents"]
+    if item["from_wallet_id"] == wallet_id:
+        return item["amount_from_cents"]
+    return item["amount_to_cents"]
+
+
+def _entry_names(entry):
+    item = entry["item"]
+    if entry["type"] == "transaction":
+        return [item["description"], *(p["name"] for p in entry["products"])]
+    return [item["description"], item["from_name"], item["to_name"]]
+
+
+def _matches(entry, wallet_id, filters):
+    amount = _entry_amount(entry, wallet_id)
+    if filters.min_cents is not None and amount < filters.min_cents:
+        return False
+    if filters.max_cents is not None and amount > filters.max_cents:
+        return False
+    if filters.category is not None:
+        # Przelew nie ma kategorii, a rachunek pasuje, gdy pasuje choć jeden produkt.
+        if entry["type"] != "transaction":
+            return False
+        categories = {p["category_id"] or NO_CATEGORY for p in entry["products"]}
+        if filters.category not in categories:
+            return False
+    # casefold, bo LIKE w SQLite nie rozpoznaje wielkości polskich liter.
+    text = filters.text.strip().casefold()
+    return not text or any(text in name.casefold() for name in _entry_names(entry))
 
 
 def get_wallet(db, wallet_id):
@@ -95,8 +147,8 @@ def delete_wallet(db, wallet_id):
         db.execute("DELETE FROM wallets WHERE id = ?", (wallet_id,))
 
 
-def load_entries(db, wallet_id, date_from="", date_to=""):
-    """Transakcje i przelewy portfela z okresu, od najnowszych."""
+def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()):
+    """Pasujące transakcje i przelewy portfela z okresu, od najnowszych, z sumami."""
     period = ""
     period_args = []
     if date_from:
@@ -157,8 +209,32 @@ def load_entries(db, wallet_id, date_from="", date_to=""):
         ),
         reverse=True,
     )
+    entries = [entry for entry in entries if _matches(entry, wallet_id, filters)]
     summary = {
-        kind: sum(t["total_cents"] for t in transactions if t["kind"] == kind)
+        kind: sum(
+            entry["item"]["total_cents"]
+            for entry in entries
+            if entry["type"] == "transaction" and entry["item"]["kind"] == kind
+        )
         for kind in ("income", "expense")
     }
     return entries, summary
+
+
+def group_by_day(entries):
+    """Grupuje posortowane operacje po dniu i sumuje przychody oraz wydatki.
+
+    Przelewy są na liście dnia, ale nie liczą się do żadnej z sum.
+    """
+    days = []
+    for entry in entries:
+        item = entry["item"]
+        if not days or days[-1]["date"] != item["occurred_on"]:
+            days.append(
+                {"date": item["occurred_on"], "entries": [], "income": 0, "expense": 0}
+            )
+        day = days[-1]
+        day["entries"].append(entry)
+        if entry["type"] == "transaction":
+            day[item["kind"]] += item["total_cents"]
+    return days

@@ -1,18 +1,16 @@
 """Zakładka portfeli: lista po lewej, operacje wybranego portfela po prawej."""
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFileDialog,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QSplitter,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -20,17 +18,23 @@ from PySide6.QtWidgets import (
 
 from ..bank_import import load_file
 from ..errors import ValidationError
-from ..money import format_money, format_quantity
+from ..money import format_money
 from ..transactions import delete_transaction
 from ..transfers import delete_transfer
-from ..wallets import delete_wallet, get_wallet, list_wallets, load_entries
+from ..wallets import (
+    delete_wallet,
+    get_wallet,
+    group_by_day,
+    list_wallets,
+    load_entries,
+)
 from . import common
+from .day_list import KEY_ROLE, RIGHT, DayTree, FilterBar, summary_text
 from .dialogs import TransactionDialog, TransferDialog, WalletDialog
 from .import_dialog import ImportDialog
 
-ENTRY_ROLE = Qt.ItemDataRole.UserRole
-DATE, DESCRIPTION, CATEGORY, QUANTITY, PRICE, AMOUNT = range(6)
-RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+ENTRY_ROLE = KEY_ROLE
+DATE, DESCRIPTION, CATEGORY, AMOUNT = range(4)
 
 
 class WalletsTab(QWidget):
@@ -80,46 +84,40 @@ class WalletsTab(QWidget):
             actions.addWidget(button)
         actions.addStretch()
 
-        self.use_from = QCheckBox("Od")
-        self.date_from = common.date_edit()
-        self.date_from.setDate(QDate.currentDate().addMonths(-1))
-        self.use_to = QCheckBox("Do")
-        self.date_to = common.date_edit()
-        filters = QHBoxLayout()
-        for widget in (self.use_from, self.date_from, self.use_to, self.date_to):
-            filters.addWidget(widget)
-        filters.addStretch()
-        self.date_from.setEnabled(False)
-        self.date_to.setEnabled(False)
-        self.use_from.toggled.connect(self.date_from.setEnabled)
-        self.use_to.toggled.connect(self.date_to.setEnabled)
-        for checkbox in (self.use_from, self.use_to):
-            checkbox.toggled.connect(self.refresh_entries)
-        for edit in (self.date_from, self.date_to):
-            edit.dateChanged.connect(self.refresh_entries)
+        self.filter_bar = FilterBar(db)
+        self.filter_bar.changed.connect(self.refresh_entries)
 
-        self.summary = QLabel()
+        self.summary = common.plain_label()
+        self.summary.setWordWrap(True)
         self.summary.hide()
         self.empty = QLabel()
         self.empty.hide()
 
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Data", "Opis", "Kategoria", "Ilość", "Cena", "Kwota"])
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setUniformRowHeights(True)
-        header = self.tree.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(DESCRIPTION, QHeaderView.ResizeMode.Stretch)
-        for column in (DATE, CATEGORY, QUANTITY, PRICE, AMOUNT):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree = DayTree(
+            ["Data", "Opis", "Kategoria", "Kwota"], stretch_columns=(DESCRIPTION,)
+        )
         self.tree.currentItemChanged.connect(self._update_entry_buttons)
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_entry())
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_entry_menu)
+        self.delete_shortcut = QShortcut(
+            QKeySequence(QKeySequence.StandardKey.Delete),
+            self.tree,
+            context=Qt.ShortcutContext.WidgetShortcut,
+        )
+        self.delete_shortcut.activated.connect(self.delete_entry)
 
         self.edit_entry_button = QPushButton("Edytuj operację")
         self.edit_entry_button.clicked.connect(self.edit_entry)
         self.delete_entry_button = QPushButton("Usuń operację")
         self.delete_entry_button.clicked.connect(self.delete_entry)
+        self.expand_all_button = QPushButton("Rozwiń wszystko")
+        self.expand_all_button.clicked.connect(self.tree.expandAll)
+        self.collapse_all_button = QPushButton("Zwiń wszystko")
+        self.collapse_all_button.clicked.connect(self.tree.collapseAll)
         entry_actions = QHBoxLayout()
+        entry_actions.addWidget(self.expand_all_button)
+        entry_actions.addWidget(self.collapse_all_button)
         entry_actions.addStretch()
         entry_actions.addWidget(self.edit_entry_button)
         entry_actions.addWidget(self.delete_entry_button)
@@ -130,7 +128,7 @@ class WalletsTab(QWidget):
         right_layout.addWidget(self.title)
         right_layout.addWidget(self.balance)
         right_layout.addLayout(actions)
-        right_layout.addLayout(filters)
+        right_layout.addWidget(self.filter_bar)
         right_layout.addWidget(self.summary)
         right_layout.addWidget(self.empty)
         right_layout.addWidget(self.tree, 1)
@@ -167,6 +165,7 @@ class WalletsTab(QWidget):
         if current:
             self.wallet_list.setCurrentItem(current)
         self.wallet_list.blockSignals(False)
+        self.filter_bar.refresh_categories()
         self._load_wallet()
 
     def _load_wallet(self, *_):
@@ -184,46 +183,47 @@ class WalletsTab(QWidget):
             self.balance.setStyleSheet(f"color: {color}" if color else "")
         self.refresh_entries()
 
-    def _period(self):
-        date_from = common.iso_date(self.date_from) if self.use_from.isChecked() else ""
-        date_to = common.iso_date(self.date_to) if self.use_to.isChecked() else ""
-        return date_from, date_to
-
     def refresh_entries(self, *_):
-        self.tree.clear()
         wallet_id = self.wallet_id()
         wallet = get_wallet(self.db, wallet_id) if wallet_id else None
         if wallet is None:
+            self.tree.clear()
             self.summary.hide()
             self.empty.hide()
             self._update_entry_buttons()
             return
-        date_from, date_to = self._period()
-        entries, summary = load_entries(self.db, wallet_id, date_from, date_to)
-        filtered = bool(date_from or date_to)
+        date_from, date_to, filters, notes = self.filter_bar.state()
+        entries, summary = load_entries(self.db, wallet_id, date_from, date_to, filters)
+        filtered = bool(date_from or date_to or filters.active)
+        text = summary_text(notes, filtered, summary, wallet["currency"])
+        self.summary.setText(text)
+        self.summary.setVisible(bool(text))
 
-        if date_from and date_to and date_from > date_to:
-            self.summary.setText("Data „Od” nie może być późniejsza niż „Do”.")
-        else:
-            currency = wallet["currency"]
-            self.summary.setText(
-                f"W tym okresie: przychody {format_money(summary['income'], currency)},"
-                f" wydatki {format_money(summary['expense'], currency)}."
-            )
-        self.summary.setVisible(filtered)
-
-        for entry in entries:
-            if entry["type"] == "transaction":
-                self.tree.addTopLevelItem(self._transaction_item(entry, wallet))
-            else:
-                self.tree.addTopLevelItem(self._transfer_item(entry["item"], wallet))
+        self.tree.fill(
+            wallet_id,
+            group_by_day(entries),
+            lambda day: [self._entry_item(entry, wallet) for entry in day["entries"]],
+            wallet["currency"],
+            "Operacje",
+            filters.active,
+        )
         self.empty.setText(
-            "Brak operacji w wybranym okresie."
+            "Brak operacji spełniających wybrane filtry."
             if filtered
             else "Ten portfel nie ma jeszcze transakcji."
         )
         self.empty.setVisible(not entries)
         self._update_entry_buttons()
+
+    def _entry_item(self, entry, wallet):
+        if entry["type"] == "transaction":
+            return self._transaction_item(entry, wallet)
+        return self._transfer_item(entry["item"], wallet)
+
+    @staticmethod
+    def _categories(products):
+        names = dict.fromkeys(p["category_name"] or "Bez kategorii" for p in products)
+        return ", ".join(names)
 
     def _transaction_item(self, entry, wallet):
         transaction = entry["item"]
@@ -231,11 +231,9 @@ class WalletsTab(QWidget):
         amount = format_money(transaction["total_cents"], wallet["currency"])
         item = QTreeWidgetItem(
             [
-                transaction["occurred_on"],
+                "",
                 transaction["description"],
-                "",
-                "",
-                "",
+                self._categories(entry["products"]),
                 f"{'+' if income else '−'}{amount}",
             ]
         )
@@ -244,23 +242,6 @@ class WalletsTab(QWidget):
         item.setForeground(
             AMOUNT, common.positive_color() if income else common.negative_color()
         )
-        if len(entry["products"]) == 1:
-            product = entry["products"][0]
-            item.setText(CATEGORY, product["category_name"] or "Bez kategorii")
-        for product in entry["products"]:
-            child = QTreeWidgetItem(
-                [
-                    "",
-                    product["name"],
-                    product["category_name"] or "Bez kategorii",
-                    format_quantity(product["quantity_milli"]),
-                    format_money(product["unit_price_cents"]),
-                    format_money(product["total_cents"]),
-                ]
-            )
-            for column in (QUANTITY, PRICE, AMOUNT):
-                child.setTextAlignment(column, RIGHT)
-            item.addChild(child)
         return item
 
     def _transfer_item(self, transfer, wallet):
@@ -276,14 +257,7 @@ class WalletsTab(QWidget):
                 transfer["amount_to_cents"], transfer["to_currency"]
             )
         item = QTreeWidgetItem(
-            [
-                transfer["occurred_on"],
-                f"{transfer['description']} ({other})",
-                "Przelew",
-                "",
-                "",
-                amount,
-            ]
+            ["", f"{transfer['description']} ({other})", "Przelew", amount]
         )
         item.setData(DATE, ENTRY_ROLE, ("transfer", transfer["id"]))
         item.setTextAlignment(AMOUNT, RIGHT)
@@ -291,12 +265,28 @@ class WalletsTab(QWidget):
         return item
 
     def selected_entry(self):
+        """Rachunek lub przelew z zaznaczonego wiersza; dzień nie jest operacją."""
         item = self.tree.currentItem()
-        if item is None:
+        key = item.data(DATE, ENTRY_ROLE) if item else None
+        return None if key is None or key[0] == "day" else key
+
+    def _entry_menu(self):
+        """Menu rachunku lub przelewu; wiersz dnia nie ma żadnych działań."""
+        if self.selected_entry() is None:
             return None
-        if item.parent():
-            item = item.parent()
-        return item.data(DATE, ENTRY_ROLE)
+        menu = QMenu(self)
+        menu.addAction("Edytuj", self.edit_entry)
+        menu.addAction("Usuń", self.delete_entry)
+        return menu
+
+    def _show_entry_menu(self, position):
+        item = self.tree.itemAt(position)
+        if item is None:
+            return
+        self.tree.setCurrentItem(item)
+        menu = self._entry_menu()
+        if menu:
+            menu.exec(self.tree.viewport().mapToGlobal(position))
 
     def _update_entry_buttons(self, *_):
         selected = self.selected_entry() is not None
@@ -380,7 +370,9 @@ class WalletsTab(QWidget):
             return
         kind, entry_id = entry
         if kind == "transaction":
-            if common.confirm(self, "Usunąć tę transakcję?"):
+            if common.confirm(
+                self, f"Usunąć transakcję „{self.tree.currentItem().text(DESCRIPTION)}”?"
+            ):
                 delete_transaction(self.db, entry_id)
                 self.refresh()
         elif common.confirm(self, "Usunąć ten przelew? Zmieni to saldo obu portfeli."):

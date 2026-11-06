@@ -8,6 +8,7 @@ from finanse.gui.categories_tab import CategoriesTab
 from finanse.gui.dialogs import TransactionDialog, TransferDialog, WalletDialog
 from finanse.gui.import_dialog import ImportDialog
 from finanse.gui.main_window import MainWindow
+from finanse.gui.products_tab import ProductsTab
 from finanse.gui.reports_tab import ReportsTab
 from finanse.gui.wallets_tab import WalletsTab
 from finanse.transactions import create_transaction, get_transaction
@@ -109,19 +110,102 @@ def test_wallets_tab_lists_entries_and_filters(db, errors):
     tab = WalletsTab(db)
     assert tab.wallet_list.count() == 2
     assert tab.tree.topLevelItemCount() == 2
-    assert tab.tree.topLevelItem(0).text(2) == "Przelew"
-    assert "→ B" in tab.tree.topLevelItem(0).text(1)
-    assert tab.tree.topLevelItem(1).child(0).text(1) == "Chleb"
+    transfer_day, purchase_day = tab.tree.topLevelItem(0), tab.tree.topLevelItem(1)
+    assert transfer_day.text(0) == "2026-11-01"
+    assert transfer_day.child(0).text(2) == "Przelew"
+    assert "→ B" in transfer_day.child(0).text(1)
+    assert purchase_day.child(0).text(1) == "Zakupy"
+    assert purchase_day.child(0).childCount() == 0  # produkty są w osobnej zakładce
+    assert tab.tree.columnCount() == 6
 
-    tab.date_from.setDate(QDate(2026, 10, 15))
-    tab.use_from.setChecked(True)
+    tab.filter_bar.date_from.setDate(QDate(2026, 10, 15))
+    tab.filter_bar.use_from.setChecked(True)
     assert tab.tree.topLevelItemCount() == 1
     assert not tab.summary.isHidden()
 
-    tab.date_to.setDate(QDate(2026, 10, 16))
-    tab.use_to.setChecked(True)
+    tab.filter_bar.date_to.setDate(QDate(2026, 10, 16))
+    tab.filter_bar.use_to.setChecked(True)
     assert tab.tree.topLevelItemCount() == 0
     assert "Brak operacji" in tab.empty.text()
+
+
+def test_day_row_sums_income_and_expense_separately(db, errors):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    other = create_wallet(db, "B")
+    add(db, wallet, name="Chleb", price="5", on="2026-11-05")
+    add(db, wallet, name="Ser", price="7,50", on="2026-11-05")
+    create_transaction(
+        db, wallet, "income", "2026-11-05", "Zwrot",
+        [{"name": "Zwrot", "quantity": "1", "price": "20", "category": None}],
+    )  # fmt: skip
+    create_transfer(db, wallet, other, "2026-11-05", "", "1000")
+    add(db, wallet, name="Inny dzień", price="99", on="2026-11-04")
+
+    tab = WalletsTab(db)
+    day = tab.tree.topLevelItem(0)
+    assert tab.tree.topLevelItemCount() == 2
+    assert day.text(0) == "2026-11-05" and day.childCount() == 4
+    assert day.isExpanded()
+    plain = lambda text: text.replace("\xa0", " ")  # noqa: E731
+    income_column, expense_column = 4, 5
+    assert plain(day.text(income_column)) == "+20,00 PLN"
+    assert plain(day.text(expense_column)) == "−12,50 PLN"
+    older = tab.tree.topLevelItem(1)
+    assert older.text(income_column) == ""
+    assert plain(older.text(expense_column)) == "−99,00 PLN"
+
+
+def test_refresh_keeps_collapsed_days_and_selection(db, errors):
+    wallet = create_wallet(db, "A")
+    other = create_wallet(db, "B")
+    add(db, wallet, on="2026-11-05")
+    add(db, wallet, on="2026-11-04")
+    add(db, other, on="2026-11-05")
+    tab = WalletsTab(db)
+    newer, older = tab.tree.topLevelItem(0), tab.tree.topLevelItem(1)
+    assert newer.isExpanded() and older.isExpanded()
+    older.setExpanded(False)
+    tab.tree.setCurrentItem(newer.child(0))
+    selected = tab.selected_entry()
+
+    tab.refresh()
+    assert tab.tree.topLevelItem(0).isExpanded()
+    assert not tab.tree.topLevelItem(1).isExpanded()
+    assert tab.selected_entry() == selected
+
+    add(db, wallet, on="2026-11-03")  # nowy dzień też jest rozwinięty
+    tab.refresh()
+    assert tab.tree.topLevelItem(2).isExpanded()
+    assert not tab.tree.topLevelItem(1).isExpanded()
+
+    tab.wallet_list.setCurrentRow(1)  # inny portfel startuje w pełni rozwinięty
+    assert tab.tree.topLevelItem(0).isExpanded()
+    assert tab.selected_entry() is None
+    tab.wallet_list.setCurrentRow(0)
+    assert tab.tree.topLevelItem(1).isExpanded()
+
+
+def test_expand_and_collapse_all(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-11-05")
+    add(db, wallet, on="2026-11-04")
+    tab = WalletsTab(db)
+
+    def expanded():
+        return [
+            tab.tree.topLevelItem(i).isExpanded()
+            for i in range(tab.tree.topLevelItemCount())
+        ]
+
+    assert expanded() == [True, True]
+    tab.collapse_all_button.click()
+    assert expanded() == [False, False]
+    tab.refresh()
+    assert expanded() == [False, False]  # odświeżenie nie rozwija zwiniętych
+    tab.expand_all_button.click()
+    assert expanded() == [True, True]
+    tab.refresh()
+    assert expanded() == [True, True]
 
 
 def test_wallets_tab_delete_entry_and_wallet(db, errors):
@@ -135,17 +219,148 @@ def test_wallets_tab_delete_entry_and_wallet(db, errors):
     assert "ma przelewy" in errors[0]
     assert len(list_wallets(db)) == 2
 
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(1))
+    assert tab.selected_entry() is None
+    assert not tab.delete_entry_button.isEnabled()
+    tab.delete_entry()
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
     tab.tree.setCurrentItem(tab.tree.topLevelItem(1).child(0))
     assert tab.selected_entry()[0] == "transaction"
     tab.delete_entry()
     assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
 
-    tab.tree.setCurrentItem(tab.tree.topLevelItem(0))
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0).child(0))
     assert tab.selected_entry() == ("transfer", transfer)
     tab.delete_entry()
     tab.delete_wallet()
     assert len(list_wallets(db)) == 1
     assert tab.wallet_list.count() == 1
+
+
+def _visible_bills(tab):
+    return sorted(
+        tab.tree.topLevelItem(d).child(b).text(1)
+        for d in range(tab.tree.topLevelItemCount())
+        for b in range(tab.tree.topLevelItem(d).childCount())
+    )
+
+
+def _filter_wallet(db):
+    wallet = create_wallet(db, "A")
+    dom = db.execute("SELECT id FROM categories WHERE name = 'Dom'").fetchone()[0]
+    create_transaction(
+        db, wallet, "expense", "2026-11-05", "Żabka",
+        [{"name": "Mydło", "quantity": "1", "price": "90", "category": dom}],
+    )  # fmt: skip
+    create_transaction(
+        db, wallet, "expense", "2026-11-04", "Kiosk",
+        [{"name": "Gazeta", "quantity": "1", "price": "20", "category": None}],
+    )  # fmt: skip
+    return dom
+
+
+def test_search_and_filters_narrow_the_list(db, errors):
+    dom = _filter_wallet(db)
+    tab = WalletsTab(db)
+    assert tab.summary.isHidden()
+    assert tab.tree.topLevelItem(0).isExpanded()
+    tab.collapse_all_button.click()
+
+    tab.filter_bar.search.setText("mydło")
+    assert _visible_bills(tab) == ["Żabka"]
+    assert tab.tree.topLevelItem(0).isExpanded()
+    assert "90,00" in tab.summary.text()
+
+    tab.filter_bar.search.clear()
+    assert _visible_bills(tab) == ["Kiosk", "Żabka"]
+    assert not tab.tree.topLevelItem(0).isExpanded()  # układ sprzed szukania
+    assert tab.summary.isHidden()
+
+    tab.filter_bar.category.setCurrentIndex(tab.filter_bar.category.findData(dom))
+    assert _visible_bills(tab) == ["Żabka"]
+    tab.filter_bar.category.setCurrentIndex(tab.filter_bar.category.findData(0))
+    assert _visible_bills(tab) == ["Kiosk"]
+    tab.filter_bar.category.setCurrentIndex(0)
+
+    tab.filter_bar.amount_from.setText("50")
+    assert _visible_bills(tab) == ["Żabka"]
+    tab.filter_bar.amount_from.clear()
+    tab.filter_bar.amount_to.setText("50,50")
+    assert _visible_bills(tab) == ["Kiosk"]
+
+    tab.filter_bar.search.setText("nie ma takiego")
+    assert _visible_bills(tab) == []
+    assert "Brak operacji" in tab.empty.text() and not tab.empty.isHidden()
+
+    tab.filter_bar.clear()
+    assert _visible_bills(tab) == ["Kiosk", "Żabka"]
+
+
+@pytest.mark.parametrize("text", ["abc", "-5"])
+def test_invalid_amount_is_reported_and_ignored(db, errors, text):
+    _filter_wallet(db)
+    tab = WalletsTab(db)
+    tab.filter_bar.amount_from.setText(text)
+    assert _visible_bills(tab) == ["Kiosk", "Żabka"]
+    assert "Niepoprawna kwota" in tab.summary.text()
+    assert not tab.summary.isHidden()
+
+
+def test_category_filter_follows_category_changes(db, errors):
+    dom = _filter_wallet(db)
+    tab = WalletsTab(db)
+    tab.filter_bar.category.setCurrentIndex(tab.filter_bar.category.findData(dom))
+    tab.refresh()
+    assert tab.filter_bar.category.currentData() == dom
+    db.execute("DELETE FROM categories WHERE id = ?", (dom,))
+    db.commit()
+    tab.refresh()
+    assert tab.filter_bar.category.findData(dom) == -1
+    assert tab.filter_bar.category.currentData() is None
+    assert _visible_bills(tab) == ["Kiosk", "Żabka"]
+
+
+def test_transaction_can_be_deleted_from_menu_and_key(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    add(db, wallet, name="Chleb", price="5", on="2026-11-05")
+    add(db, wallet, name="Ser", price="7", on="2026-11-05")
+    add(db, wallet, name="Mleko", price="3", on="2026-11-04")
+    questions = []
+    monkeypatch.setattr(
+        common, "confirm", lambda _p, text, **_k: questions.append(text) or True
+    )
+    tab = WalletsTab(db)
+
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0))
+    assert tab._entry_menu() is None  # wiersz dnia
+
+    day = tab.tree.topLevelItem(0)
+    day.setExpanded(True)
+    tab.tree.setCurrentItem(day.child(0))
+    menu = tab._entry_menu()
+    assert [action.text() for action in menu.actions()] == ["Edytuj", "Usuń"]
+    menu.actions()[1].trigger()
+    assert questions == ["Usunąć transakcję „Zakupy”?"]
+    assert get_wallet(db, wallet)["balance_cents"] < 10000
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+    assert tab.tree.topLevelItem(0).isExpanded()  # dzień zostaje rozwinięty
+
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0).child(0))
+    tab.delete_shortcut.activated.emit()
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+    assert tab.tree.topLevelItemCount() == 1  # pusty dzień znika
+    assert get_wallet(db, wallet)["balance_cents"] == 9700
+
+
+def test_declined_confirmation_keeps_transaction(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    add(db, wallet)
+    monkeypatch.setattr(common, "confirm", lambda *_a, **_k: False)
+    tab = WalletsTab(db)
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0).child(0))
+    tab.delete_entry()
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
 
 
 def test_empty_database_disables_wallet_actions(db, errors):
@@ -178,7 +393,7 @@ def test_import_file_from_wallets_tab(db, errors, tmp_path, monkeypatch):
     tab = WalletsTab(db)
     tab.import_file(path)
     assert "Zaimportowano transakcje: 4" in errors[0]
-    assert tab.tree.topLevelItemCount() == 4
+    assert tab.tree.topLevelItemCount() == 3  # cztery operacje z trzech dni
 
     tab.import_file(tmp_path / "brak.csv")
     assert "odczytać" in errors[1]
@@ -325,9 +540,108 @@ def test_reports_tab_lists_wallets_of_one_currency(db, errors):
     assert _cleaned(tab.expense_label) == "22,00 EUR"
 
 
+def _product_tab(db):
+    wallet = create_wallet(db, "A")
+    dom = db.execute("SELECT id FROM categories WHERE name = 'Dom'").fetchone()[0]
+    create_transaction(
+        db, wallet, "expense", "2026-11-05", "Biedronka",
+        [
+            {"name": "Mydło", "quantity": "2", "price": "5", "category": dom},
+            {"name": "Żurek", "quantity": "1", "price": "30", "category": None},
+        ],
+    )  # fmt: skip
+    create_transaction(
+        db, wallet, "income", "2026-11-05", "Zwrot",
+        [{"name": "Kaucja", "quantity": "1", "price": "7", "category": None}],
+    )  # fmt: skip
+    return wallet, dom, ProductsTab(db)
+
+
+def _product_names(tab):
+    return sorted(
+        tab.tree.topLevelItem(d).child(p).text(1)
+        for d in range(tab.tree.topLevelItemCount())
+        for p in range(tab.tree.topLevelItem(d).childCount())
+    )
+
+
+def test_products_tab_lists_products_by_day(db, errors):
+    _, _, tab = _product_tab(db)
+    day = tab.tree.topLevelItem(0)
+    assert tab.tree.topLevelItemCount() == 1
+    assert day.text(0) == "2026-11-05" and day.text(1) == "Produkty: 3"
+    assert day.isExpanded()
+    assert day.text(7).replace("\xa0", " ") == "+7,00 PLN"
+    assert day.text(8).replace("\xa0", " ") == "−40,00 PLN"
+    assert _product_names(tab) == ["Kaucja", "Mydło", "Żurek"]
+
+    soap = next(day.child(i) for i in range(3) if day.child(i).text(1) == "Mydło")
+    assert [soap.text(c) for c in (2, 3, 4)] == ["Biedronka", "Dom", "2"]
+    assert soap.text(5) == "5,00"
+    assert soap.text(6).replace("\xa0", " ") == "−10,00 PLN"
+
+
+def test_products_tab_filters(db, errors):
+    _, dom, tab = _product_tab(db)
+    bar = tab.filter_bar
+    bar.search.setText("ŻUR")
+    assert _product_names(tab) == ["Żurek"]
+    assert tab.tree.topLevelItem(0).isExpanded()
+    assert "30,00" in tab.summary.text()
+    bar.search.setText("Biedronka")  # szuka tylko w nazwach produktów
+    assert _product_names(tab) == []
+    assert not tab.empty.isHidden()
+    bar.clear()
+
+    # Filtr kategorii nie pokazuje drugiego produktu z tego samego rachunku.
+    bar.category.setCurrentIndex(bar.category.findData(dom))
+    assert _product_names(tab) == ["Mydło"]
+    bar.category.setCurrentIndex(0)
+
+    # Kwota dotyczy wartości produktu, a nie całego rachunku.
+    bar.amount_to.setText("10")
+    assert _product_names(tab) == ["Kaucja", "Mydło"]
+    bar.amount_from.setText("10")
+    assert _product_names(tab) == ["Mydło"]
+
+
+def test_products_tab_edit_opens_transaction(db, errors, monkeypatch):
+    wallet, _, tab = _product_tab(db)
+    opened = []
+
+    def exec_recording(dialog):
+        opened.append(dialog.transaction_id)
+        dialog.description.setText("Zmieniony")
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(TransactionDialog, "exec", exec_recording)
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0))
+    assert tab.selected_transaction() is None
+    assert not tab.edit_button.isEnabled()
+    tab.edit_transaction()
+    assert opened == []
+
+    day = tab.tree.topLevelItem(0)
+    tab.tree.setCurrentItem(day.child(0))
+    assert tab.edit_button.isEnabled()
+    tab.edit_button.click()
+    assert len(opened) == 1
+    assert tab.tree.topLevelItem(0).isExpanded()
+    assert tab.wallet_id() == wallet
+    texts = [tab.tree.topLevelItem(0).child(i).text(2) for i in range(3)]
+    assert "Zmieniony" in texts
+
+
+def test_products_tab_without_wallets(db, errors):
+    tab = ProductsTab(db)
+    assert tab.title.text() == "Dodaj pierwszy portfel"
+    assert not tab.edit_button.isEnabled()
+
+
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 3
+    assert window.tabs.count() == 4
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None

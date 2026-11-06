@@ -8,7 +8,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 ## Funkcje
 
 - portfele z własną walutą i saldem początkowym
-- transakcje z wieloma produktami i filtrowanie po dacie
+- transakcje z wieloma produktami oraz osobne listy transakcji i produktów według
+  dni, z szukaniem po nazwie i filtrami po dacie, kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - przelewy między portfelami, także w różnych walutach
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na

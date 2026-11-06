@@ -7,6 +7,7 @@ from finanse.categories import (
     rename_category,
 )
 from finanse.errors import ValidationError
+from finanse.products import group_products_by_day, load_products
 from finanse.reports import axis_scale, build_report
 from finanse.transactions import (
     create_transaction,
@@ -16,9 +17,12 @@ from finanse.transactions import (
 )
 from finanse.transfers import create_transfer, delete_transfer, update_transfer
 from finanse.wallets import (
+    NO_CATEGORY,
+    EntryFilters,
     create_wallet,
     delete_wallet,
     get_wallet,
+    group_by_day,
     list_wallets,
     load_entries,
     update_wallet,
@@ -173,6 +177,101 @@ def test_date_filter_and_summary(db):
     entries, summary = load_entries(db, wallet, "2026-11-01", "2026-11-30")
     assert [e["item"]["occurred_on"] for e in entries] == ["2026-11-02", "2026-11-01"]
     assert summary == {"income": 400, "expense": 200}
+
+
+def _names(db, wallet, **filters):
+    entries, _ = load_entries(db, wallet, filters=EntryFilters(**filters))
+    return sorted(entry["item"]["description"] for entry in entries)
+
+
+def _sample_wallet(db):
+    wallet = create_wallet(db, "Główny")
+    other = create_wallet(db, "Oszczędności")
+    food, home = category_id(db, "Jedzenie"), category_id(db, "Dom")
+    create_transaction(db, wallet, "expense", "2026-11-01", "Żabka", rows(
+        ("Bułka", "1", "10", food), ("Mydło", "1", "90", home)))  # fmt: skip
+    create_transaction(db, wallet, "expense", "2026-11-02", "Kiosk", rows(("Gazeta", "1", "20")))
+    create_transaction(db, wallet, "income", "2026-11-03", "Pensja", rows(("Etat", "1", "500")))
+    create_transfer(db, wallet, other, "2026-11-04", "Na wakacje", "50")
+    return wallet
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("żabka", ["Żabka"]),  # bez względu na wielkość polskich liter
+        ("  ŻAB ", ["Żabka"]),
+        ("mydło", ["Żabka"]),  # nazwa produktu
+        ("wakacje", ["Na wakacje"]),
+        ("oszczędności", ["Na wakacje"]),  # drugi portfel przelewu
+        ("nie ma", []),
+    ],
+)
+def test_filter_by_name(db, text, expected):
+    assert _names(db, _sample_wallet(db), text=text) == expected
+
+
+def test_filter_by_category(db):
+    wallet = _sample_wallet(db)
+    # Rachunek pasuje, gdy pasuje choć jeden produkt; przelew nie ma kategorii.
+    assert _names(db, wallet, category=category_id(db, "Dom")) == ["Żabka"]
+    assert _names(db, wallet, category=NO_CATEGORY) == ["Kiosk", "Pensja"]
+    assert _names(db, wallet, category=category_id(db, "Transport")) == []
+
+
+def test_filter_by_amount_is_inclusive_and_covers_transfers(db):
+    wallet = _sample_wallet(db)
+    assert _names(db, wallet, min_cents=10000) == ["Pensja", "Żabka"]
+    assert _names(db, wallet, max_cents=5000) == ["Kiosk", "Na wakacje"]
+    assert _names(db, wallet, min_cents=2000, max_cents=5000) == ["Kiosk", "Na wakacje"]
+    assert _names(db, wallet, min_cents=5000, max_cents=2000) == []
+
+
+def test_filters_combine_and_summary_counts_only_matching(db):
+    wallet = _sample_wallet(db)
+    filters = EntryFilters(text="a", min_cents=10000)
+    entries, summary = load_entries(db, wallet, "2026-11-02", "", filters)
+    assert [e["item"]["description"] for e in entries] == ["Pensja"]
+    assert summary == {"income": 50000, "expense": 0}
+    assert not EntryFilters().active and filters.active
+
+
+def test_group_by_day_sums_without_transfers(db):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    other = create_wallet(db, "B")
+    add(db, wallet, ("X", "1", "1"), on="2026-11-02")
+    add(db, wallet, ("Y", "2", "1,50"), on="2026-11-02")
+    add(db, wallet, ("Z", "1", "4"), kind="income", on="2026-11-02")
+    create_transfer(db, wallet, other, "2026-11-02", "", "50")
+    create_transfer(db, wallet, other, "2026-11-01", "", "5")
+
+    newest, oldest = group_by_day(load_entries(db, wallet)[0])
+    assert (newest["date"], len(newest["entries"])) == ("2026-11-02", 4)
+    assert (newest["income"], newest["expense"]) == (400, 400)
+    assert (oldest["date"], oldest["income"], oldest["expense"]) == ("2026-11-01", 0, 0)
+    assert group_by_day([]) == []
+
+
+def test_load_products_filters_single_products_and_skips_transfers(db):
+    wallet = _sample_wallet(db)
+    food = category_id(db, "Jedzenie")
+    names = lambda **f: [  # noqa: E731
+        p["name"] for p in load_products(db, wallet, filters=EntryFilters(**f))[0]
+    ]
+    assert names() == ["Etat", "Gazeta", "Bułka", "Mydło"]
+    assert names(text="BUŁ") == ["Bułka"]
+    assert names(text="Żabka") == []
+    assert names(category=food) == ["Bułka"]
+    assert names(category=NO_CATEGORY) == ["Etat", "Gazeta"]
+    assert names(min_cents=2000, max_cents=9000) == ["Gazeta", "Mydło"]
+
+    products, summary = load_products(db, wallet, "2026-11-01", "2026-11-02")
+    assert summary == {"income": 0, "expense": 12000}
+    days = group_products_by_day(products)
+    assert [(d["date"], len(d["entries"]), d["expense"]) for d in days] == [
+        ("2026-11-02", 1, 2000),
+        ("2026-11-01", 2, 10000),
+    ]
 
 
 def test_transfer_moves_money(db):
