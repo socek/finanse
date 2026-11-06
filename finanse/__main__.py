@@ -19,7 +19,8 @@ def default_database():
 def main(argv=None):
     argv = sys.argv if argv is None else argv
     app = QApplication(argv)
-    app.setApplicationName("Finanse")
+    app.setApplicationName("finanse")
+    app.setDesktopFileName("finanse")  # app_id okna na Waylandzie
 
     QLocale.setDefault(QLocale(QLocale.Language.Polish, QLocale.Country.Poland))
     translator = QTranslator(app)

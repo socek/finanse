@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Finanse
+Comment=Spisywanie finansów: portfele, transakcje i raporty
+Exec=@PROJECT_DIR@/.venv/bin/python -m finanse
+Path=@PROJECT_DIR@
+Icon=accessories-calculator
+Terminal=false
+Categories=Office;Finance;
+StartupWMClass=finanse

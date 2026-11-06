@@ -30,6 +30,13 @@ python -m venv .venv
 Baza powstaje przy pierwszym uruchomieniu jako `~/.finanse/finanse.db`. Inną bazę
 można wskazać argumentem: `.venv/bin/python -m finanse /sciezka/do/bazy.db`.
 
+Aby dodać aplikację do menu programów, zainstaluj plik `.desktop`. Trzeba to powtórzyć
+po przeniesieniu projektu, bo plik zawiera jego ścieżkę:
+
+```sh
+sed "s|@PROJECT_DIR@|$PWD|g" finanse.desktop.in > ~/.local/share/applications/finanse.desktop
+```
+
 ## Aktualizacja bazy
 
 Zmiany schematu są w `finanse/migrations/NNN_nazwa.sql` i wykonują się same przy
