@@ -1264,7 +1264,7 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 8
+    assert window.tabs.count() == 9
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None

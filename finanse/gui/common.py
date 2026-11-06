@@ -4,6 +4,8 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QMessageBox
 
+from .themes import color_override
+
 
 NO_CATEGORY_NAME = "Bez kategorii"
 NO_CATEGORY_HINT = "Można tak zostawić, ale kategoria ułatwia czytanie raportów."
@@ -60,16 +62,16 @@ def _is_dark():
     return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
 
 
-def _themed(light, dark):
-    return QColor(dark if _is_dark() else light)
+def _themed(name, light, dark):
+    return QColor(color_override(name) or (dark if _is_dark() else light))
 
 
 def positive_color():
-    return _themed("#1a7a52", "#5cc99a")
+    return _themed("positive", "#1a7a52", "#5cc99a")
 
 
 def negative_color():
-    return _themed("#b3362b", "#f0857a")
+    return _themed("negative", "#b3362b", "#f0857a")
 
 
 def warning_background():
@@ -137,8 +139,8 @@ def style_category_combo(combo):
 
 
 def income_series():
-    return _themed("#2a78d6", "#3987e5")
+    return _themed("income", "#2a78d6", "#3987e5")
 
 
 def expense_series():
-    return _themed("#eb6834", "#d95926")
+    return _themed("expense", "#eb6834", "#d95926")

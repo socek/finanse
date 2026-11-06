@@ -29,3 +29,12 @@ def forget_transaction_date():
     TransactionDialog.remembered_date = None
     yield
     TransactionDialog.remembered_date = None
+
+
+@pytest.fixture(autouse=True)
+def restore_system_theme():
+    yield
+    from finanse.gui.themes import apply_theme
+
+    if QApplication.instance():
+        apply_theme("system")

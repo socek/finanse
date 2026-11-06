@@ -198,10 +198,14 @@ def _section_title(text):
     return label
 
 
+def _color_swatch(swatch, color):
+    swatch.setStyleSheet(f"background: {color.name()}; border-radius: 3px;")
+
+
 def _swatch(color):
     swatch = QFrame()
     swatch.setFixedSize(12, 12)
-    swatch.setStyleSheet(f"background: {color.name()}; border-radius: 3px;")
+    _color_swatch(swatch, color)
     return swatch
 
 
@@ -303,10 +307,12 @@ class ReportsTab(QWidget):
         self.chart.monthClicked.connect(self.show_month)
         self.trend_empty = QLabel("Brak transakcji w tym okresie.")
         legend = QHBoxLayout()
+        self.income_swatch = _swatch(common.income_series())
+        self.expense_swatch = _swatch(common.expense_series())
         self.legend_widgets = [
-            _swatch(common.income_series()),
+            self.income_swatch,
             QLabel("Przychody"),
-            _swatch(common.expense_series()),
+            self.expense_swatch,
             QLabel("Wydatki"),
         ]
         for widget in self.legend_widgets:
@@ -410,6 +416,8 @@ class ReportsTab(QWidget):
         self.table_button.setText("Ukryj tabelę" if checked else "Pokaż jako tabelę")
 
     def refresh(self):
+        _color_swatch(self.income_swatch, common.income_series())
+        _color_swatch(self.expense_swatch, common.expense_series())
         wallet_ids = {
             wallet["id"]
             for wallet in list_wallets(self.db)

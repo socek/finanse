@@ -8,6 +8,7 @@ from .history_tab import HistoryTab
 from .products_tab import ProductsTab
 from .recurring_tab import RecurringTab
 from .reports_tab import ReportsTab
+from .settings_tab import SettingsTab
 from .wallets_tab import WalletsTab
 
 
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         self.categories = CategoriesTab(db)
         self.history = HistoryTab(db)
         self.files = FilesTab(db)
+        self.settings = SettingsTab(db, self.refresh_all_tabs)
         self.about = AboutTab()
 
         self.tabs = QTabWidget()
@@ -34,6 +36,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.categories, "Kategorie")
         self.tabs.addTab(self.history, "Historia")
         self.tabs.addTab(self.files, "Pliki")
+        self.tabs.addTab(self.settings, "Ustawienia")
         self.tabs.addTab(self.about, "O programie")
         # Każda zakładka czyta z bazy przy wejściu, więc widzi zmiany z pozostałych.
         self.tabs.currentChanged.connect(lambda _: self.tabs.currentWidget().refresh())
@@ -41,6 +44,11 @@ class MainWindow(QMainWindow):
 
         self.new_transaction_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         self.new_transaction_shortcut.activated.connect(self.new_transaction)
+
+    def refresh_all_tabs(self):
+        """Po zmianie motywu tabele muszą dostać kolory z nowej palety."""
+        for index in range(self.tabs.count()):
+            self.tabs.widget(index).refresh()
 
     def new_transaction(self):
         """Działa z każdej zakładki, a po zapisie odświeża tę, która jest widoczna."""

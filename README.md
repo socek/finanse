@@ -18,6 +18,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
 - historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
+- motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
+  obok bazy
 
 ## Uruchomienie
 

@@ -42,3 +42,4 @@ Pierwsza wersja aplikacji okienkowej.
 - Instalacja przez `pyproject.toml` i polecenie `finanse`.
 - Plik `.desktop` z wpisem w menu programów i klasą okna `finanse`.
 - Zakładka O programie z wersją i historią zmian.
+- Zakładka Ustawienia z wyborem motywu: systemowy, jasny, ciemny, sepia lub kolorowy.

@@ -9,6 +9,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .db import backup_on_startup, connect, init_db
 from .gui.main_window import MainWindow
+from .gui.themes import apply_theme
+from .settings import load_settings
 
 
 def default_database():
@@ -56,6 +58,7 @@ def main(argv=None):
         )
         return 1
 
+    apply_theme(load_settings(path).get("theme"))
     window = MainWindow(db)
     window.show()
     try:
