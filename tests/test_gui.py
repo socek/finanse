@@ -257,6 +257,74 @@ def test_reports_tab_shows_month_and_navigates(db, errors):
     assert tab.chart._month_at(tab.chart.width() - 1) == 11
 
 
+def _check(tab, name, checked):
+    state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+    tab.wallet_list.findItems(name, Qt.MatchFlag.MatchExactly)[0].setCheckState(state)
+
+
+def _cleaned(label):
+    return label.text().replace("\xa0", " ")
+
+
+def test_reports_tab_combines_chosen_wallets(db, errors):
+    for name, price in (("A", "10"), ("B", "20"), ("C", "40")):
+        add(db, create_wallet(db, name), price=price, on="2026-10-05")
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+
+    assert tab.wallet_list.count() == 3
+    assert _cleaned(tab.expense_label) == "70,00 PLN"
+    assert tab.selection_label.text() == "Wszystkie portfele w PLN"
+    assert tab.wallets_table.rowCount() == 3
+
+    _check(tab, "C", False)
+    assert _cleaned(tab.expense_label) == "30,00 PLN"
+    assert tab.selection_label.text() == "A, B"
+    assert tab.wallets_table.item(1, 0).text() == "B"
+    assert not tab.wallets_table.isHidden()
+
+    _check(tab, "B", False)
+    assert _cleaned(tab.expense_label) == "10,00 PLN"
+    assert tab.wallets_table.isHidden()  # jeden portfel nie wymaga rozbicia
+
+    tab.select_none_button.click()
+    assert not tab.no_selection.isHidden() and tab.scroll.isHidden()
+    tab.select_all_button.click()
+    assert tab.no_selection.isHidden() and not tab.scroll.isHidden()
+    assert _cleaned(tab.expense_label) == "70,00 PLN"
+
+
+def test_reports_tab_keeps_selection_and_includes_new_wallet(db, errors):
+    add(db, create_wallet(db, "A"), price="10", on="2026-10-05")
+    add(db, create_wallet(db, "B"), price="20", on="2026-10-05")
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+    _check(tab, "B", False)
+
+    add(db, create_wallet(db, "C"), price="40", on="2026-10-05")
+    tab.refresh()
+    assert _cleaned(tab.expense_label) == "50,00 PLN"
+    assert tab.wallet_list.findItems("B", Qt.MatchFlag.MatchExactly)[0].checkState() == (
+        Qt.CheckState.Unchecked
+    )
+    tab.next_button.click()
+    tab.previous_button.click()
+    assert _cleaned(tab.expense_label) == "50,00 PLN"
+
+
+def test_reports_tab_lists_wallets_of_one_currency(db, errors):
+    add(db, create_wallet(db, "Złotówki"), price="11", on="2026-10-05")
+    add(db, create_wallet(db, "Euro", "EUR"), price="22", on="2026-10-05")
+    add(db, create_wallet(db, "Dolary", "USD"), price="33", on="2026-10-05")
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+    assert not tab.currency_combo.isHidden()
+
+    tab.currency_combo.setCurrentIndex(tab.currency_combo.findData("EUR"))
+    assert [tab.wallet_list.item(r).text() for r in range(tab.wallet_list.count())] == ["Euro"]
+    assert _cleaned(tab.expense_label) == "22,00 EUR"
+
+
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
     assert window.tabs.count() == 3

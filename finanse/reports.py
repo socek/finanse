@@ -34,17 +34,18 @@ def _parse_month(text):
     return today.year, today.month
 
 
-def _resolve_scope(text, wallets):
-    """Zwraca (klucz zakresu, identyfikatory portfeli, walutę)."""
-    for wallet in wallets:
-        if text == f"wallet:{wallet['id']}":
-            return text, [wallet["id"]], wallet["currency"]
+def _resolve_selection(currency, wallet_ids, wallets):
+    """Zwraca (walutę, wybrane portfele). Portfele w innej walucie są pomijane."""
     currencies = Counter(wallet["currency"] for wallet in wallets)
-    currency = text.removeprefix("currency:")
-    if not text.startswith("currency:") or currency not in currencies:
+    if currency not in currencies:
         currency = min(currencies, key=lambda code: (-currencies[code], code))
-    ids = [wallet["id"] for wallet in wallets if wallet["currency"] == currency]
-    return f"currency:{currency}", ids, currency
+    selected = [
+        wallet
+        for wallet in wallets
+        if wallet["currency"] == currency
+        and (wallet_ids is None or wallet["id"] in wallet_ids)
+    ]
+    return currency, selected
 
 
 def axis_scale(max_cents):
@@ -172,25 +173,67 @@ def _by_category(db, wallet_ids, year, month, kind, currency):
     return result, grand_total
 
 
-def build_report(db, scope="", month=""):
-    """Dane raportu miesięcznego; None, gdy nie ma żadnego portfela."""
+def _wallet_totals(db, wallets, year, month):
+    """Przychody, wydatki i bilans miesiąca osobno dla każdego portfela."""
+    end_year, end_month = _shift_month(year, month, 1)
+    marks = ",".join("?" * len(wallets))
+    totals = {
+        (row["wallet_id"], row["kind"]): row["total"]
+        for row in db.execute(
+            f"""
+            SELECT t.wallet_id, t.kind, SUM(p.total_cents) AS total
+            FROM transactions t
+            JOIN products p ON p.transaction_id = t.id
+            WHERE t.wallet_id IN ({marks})
+              AND t.occurred_on >= ? AND t.occurred_on < ?
+            GROUP BY t.wallet_id, t.kind
+            """,
+            (
+                *(wallet["id"] for wallet in wallets),
+                f"{_month_key(year, month)}-01",
+                f"{_month_key(end_year, end_month)}-01",
+            ),
+        )
+    }
+    result = []
+    for wallet in wallets:
+        income = totals.get((wallet["id"], "income"), 0)
+        expense = totals.get((wallet["id"], "expense"), 0)
+        result.append(
+            {
+                "id": wallet["id"],
+                "name": wallet["name"],
+                "income": income,
+                "expense": expense,
+                "net": income - expense,
+            }
+        )
+    return result
+
+
+def build_report(db, currency="", wallet_ids=None, month=""):
+    """Raport miesięczny z wybranych portfeli jednej waluty.
+
+    `wallet_ids=None` oznacza wszystkie portfele tej waluty. Zwraca None, gdy nie
+    ma żadnego portfela.
+    """
     wallets = list_wallets(db)
     if not wallets:
         return None
 
     year, month_number = _parse_month(month)
-    scope, wallet_ids, currency = _resolve_scope(scope, wallets)
+    currency, selected = _resolve_selection(currency, wallet_ids, wallets)
+    ids = [wallet["id"] for wallet in selected]
     expenses, expense_total = _by_category(
-        db, wallet_ids, year, month_number, "expense", currency
+        db, ids, year, month_number, "expense", currency
     )
-    incomes, income_total = _by_category(
-        db, wallet_ids, year, month_number, "income", currency
-    )
+    incomes, income_total = _by_category(db, ids, year, month_number, "income", currency)
     return {
         "wallets": wallets,
         "currencies": sorted({wallet["currency"] for wallet in wallets}),
-        "scope": scope,
         "currency": currency,
+        "selected_ids": ids,
+        "wallet_totals": _wallet_totals(db, selected, year, month_number),
         "month_key": _month_key(year, month_number),
         "month_title": f"{MONTHS[month_number - 1]} {year}",
         "previous_month": _month_key(*_shift_month(year, month_number, -1)),
@@ -200,5 +243,5 @@ def build_report(db, scope="", month=""):
         "incomes": incomes,
         "income_total": income_total,
         "net_total": income_total - expense_total,
-        "trend": _trend(db, wallet_ids, year, month_number, currency),
+        "trend": _trend(db, ids, year, month_number, currency),
     }

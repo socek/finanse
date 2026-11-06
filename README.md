@@ -11,7 +11,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - transakcje z wieloma produktami i filtrowanie po dacie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - przelewy między portfelami, także w różnych walutach
-- raporty miesięczne: bilans, podział na kategorie i wykres z 12 miesięcy
+- raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
+  portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
 
 ## Uruchomienie

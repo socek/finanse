@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from ..money import format_money
 from ..reports import build_report
+from ..wallets import list_wallets
 from . import common
 
 BAR_WIDTH = 12
@@ -202,17 +205,45 @@ def _swatch(color):
     return swatch
 
 
+def _fit_height(table):
+    """Tabela w przewijanym widoku nie potrzebuje własnego paska przewijania."""
+    table.setFixedHeight(
+        table.horizontalHeader().height()
+        + sum(table.rowHeight(row) for row in range(table.rowCount()))
+        + 4
+    )
+
+
 class ReportsTab(QWidget):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
-        self.scope = ""
+        self.currency = ""
+        self.excluded = set()  # dzięki temu nowy portfel jest od razu w raporcie
+        self.listed_wallets = None
         self.month = QDate.currentDate().toString("yyyy-MM")
         self.report = None
 
-        self.scope_combo = QComboBox()
-        self.scope_combo.setMinimumWidth(220)
-        self.scope_combo.currentIndexChanged.connect(self._scope_changed)
+        self.currency_label = QLabel("Waluta")
+        self.currency_combo = QComboBox()
+        self.currency_combo.currentIndexChanged.connect(self._currency_changed)
+        self.wallet_list = QListWidget()
+        self.wallet_list.itemChanged.connect(self._wallet_toggled)
+        self.select_all_button = QPushButton("Zaznacz wszystkie")
+        self.select_all_button.clicked.connect(lambda: self._set_all_checked(True))
+        self.select_none_button = QPushButton("Odznacz wszystkie")
+        self.select_none_button.clicked.connect(lambda: self._set_all_checked(False))
+        side = QWidget()
+        side.setFixedWidth(230)
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.addWidget(_section_title("Portfele w raporcie"))
+        side_layout.addWidget(self.currency_label)
+        side_layout.addWidget(self.currency_combo)
+        side_layout.addWidget(self.wallet_list, 1)
+        side_layout.addWidget(self.select_all_button)
+        side_layout.addWidget(self.select_none_button)
+
         self.previous_button = QPushButton("← Poprzedni")
         self.previous_button.clicked.connect(lambda: self.show_month(self.report["previous_month"]))
         self.month_edit = QDateEdit()
@@ -221,17 +252,17 @@ class ReportsTab(QWidget):
         self.next_button = QPushButton("Następny →")
         self.next_button.clicked.connect(lambda: self.show_month(self.report["next_month"]))
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Zakres"))
-        controls.addWidget(self.scope_combo)
-        controls.addSpacing(16)
         controls.addWidget(self.previous_button)
         controls.addWidget(self.month_edit)
         controls.addWidget(self.next_button)
         controls.addStretch()
 
         self.no_wallets = QLabel("Dodaj portfel, aby zobaczyć raporty.")
+        self.no_selection = QLabel("Zaznacz co najmniej jeden portfel.")
 
         self.month_title = _section_title("")
+        self.selection_label = common.plain_label()
+        self.selection_label.setWordWrap(True)
         self.income_label = QLabel()
         self.expense_label = QLabel()
         self.net_label = QLabel()
@@ -251,6 +282,17 @@ class ReportsTab(QWidget):
             stats.addLayout(box)
             stats.addSpacing(32)
         stats.addStretch()
+
+        self.wallets_title = _section_title("Według portfeli")
+        self.wallets_table = QTableWidget(0, 4)
+        self.wallets_table.setHorizontalHeaderLabels(
+            ["Portfel", "Przychody", "Wydatki", "Bilans"]
+        )
+        self.wallets_table.verticalHeader().hide()
+        self.wallets_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.wallets_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
 
         self.expenses_grid = QGridLayout()
         self.expenses_empty = QLabel("Brak wydatków w tym miesiącu.")
@@ -287,7 +329,11 @@ class ReportsTab(QWidget):
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.addWidget(self.month_title)
+        body_layout.addWidget(self.selection_label)
         body_layout.addLayout(stats)
+        body_layout.addSpacing(12)
+        body_layout.addWidget(self.wallets_title)
+        body_layout.addWidget(self.wallets_table)
         body_layout.addSpacing(12)
         body_layout.addWidget(_section_title("Wydatki według kategorii"))
         body_layout.addWidget(self.expenses_empty)
@@ -313,12 +359,19 @@ class ReportsTab(QWidget):
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setWidget(body)
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(controls)
-        layout.addWidget(self.no_wallets)
-        layout.addWidget(self.scroll, 1)
+        main = QVBoxLayout()
+        main.addLayout(controls)
+        main.addWidget(self.no_wallets)
+        main.addWidget(self.no_selection)
+        main.addWidget(self.scroll, 1)
+        layout = QHBoxLayout(self)
+        layout.addWidget(side)
+        layout.addLayout(main, 1)
         self.controls = (
-            self.scope_combo,
+            self.currency_combo,
+            self.wallet_list,
+            self.select_all_button,
+            self.select_none_button,
             self.previous_button,
             self.month_edit,
             self.next_button,
@@ -332,8 +385,24 @@ class ReportsTab(QWidget):
     def _month_edited(self, value):
         self.show_month(value.toString("yyyy-MM"))
 
-    def _scope_changed(self):
-        self.scope = self.scope_combo.currentData() or ""
+    def _currency_changed(self):
+        self.currency = self.currency_combo.currentData() or ""
+        self.refresh()
+
+    def _wallet_toggled(self, item):
+        wallet_id = item.data(Qt.ItemDataRole.UserRole)
+        if item.checkState() == Qt.CheckState.Checked:
+            self.excluded.discard(wallet_id)
+        else:
+            self.excluded.add(wallet_id)
+        self.refresh()
+
+    def _set_all_checked(self, checked):
+        ids = {
+            self.wallet_list.item(row).data(Qt.ItemDataRole.UserRole)
+            for row in range(self.wallet_list.count())
+        }
+        self.excluded = self.excluded - ids if checked else self.excluded | ids
         self.refresh()
 
     def _toggle_table(self, checked):
@@ -341,25 +410,32 @@ class ReportsTab(QWidget):
         self.table_button.setText("Ukryj tabelę" if checked else "Pokaż jako tabelę")
 
     def refresh(self):
-        self.report = build_report(self.db, self.scope, self.month)
+        wallet_ids = {
+            wallet["id"]
+            for wallet in list_wallets(self.db)
+            if wallet["id"] not in self.excluded
+        }
+        self.report = build_report(self.db, self.currency, wallet_ids, self.month)
         has_report = self.report is not None
         self.no_wallets.setVisible(not has_report)
-        self.scroll.setVisible(has_report)
+        self.no_selection.setVisible(has_report and not self.report["selected_ids"])
+        self.scroll.setVisible(has_report and bool(self.report["selected_ids"]))
         for control in self.controls:
             control.setEnabled(has_report)
         if not has_report:
             return
 
         report = self.report
-        self.scope = report["scope"]
+        self.currency = report["currency"]
         self.month = report["month_key"]
-        self._fill_scope(report)
+        self._fill_selection(report)
         self.month_edit.blockSignals(True)
         self.month_edit.setDate(QDate.fromString(self.month + "-01", "yyyy-MM-dd"))
         self.month_edit.blockSignals(False)
 
         currency = report["currency"]
         self.month_title.setText(report["month_title"])
+        self._fill_wallet_totals(report)
         self.income_label.setText(format_money(report["income_total"], currency))
         self.expense_label.setText(format_money(report["expense_total"], currency))
         self.net_label.setText(format_money(report["net_total"], currency))
@@ -392,21 +468,71 @@ class ReportsTab(QWidget):
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
                 self.trend_table.setItem(row, column, item)
-        self.trend_table.setFixedHeight(
-            self.trend_table.horizontalHeader().height()
-            + sum(self.trend_table.rowHeight(row) for row in range(self.trend_table.rowCount()))
-            + 4
-        )
+        _fit_height(self.trend_table)
 
-    def _fill_scope(self, report):
-        self.scope_combo.blockSignals(True)
-        self.scope_combo.clear()
+    def _fill_selection(self, report):
+        self.currency_combo.blockSignals(True)
+        self.currency_combo.clear()
         for code in report["currencies"]:
-            self.scope_combo.addItem(f"Wszystkie w {code}", f"currency:{code}")
-        for wallet in report["wallets"]:
-            self.scope_combo.addItem(wallet["name"], f"wallet:{wallet['id']}")
-        self.scope_combo.setCurrentIndex(max(self.scope_combo.findData(report["scope"]), 0))
-        self.scope_combo.blockSignals(False)
+            self.currency_combo.addItem(code, code)
+        self.currency_combo.setCurrentIndex(
+            max(self.currency_combo.findData(report["currency"]), 0)
+        )
+        self.currency_combo.blockSignals(False)
+        several = len(report["currencies"]) > 1
+        self.currency_label.setVisible(several)
+        self.currency_combo.setVisible(several)
+
+        wallets = [w for w in report["wallets"] if w["currency"] == report["currency"]]
+        listed = [(wallet["id"], wallet["name"]) for wallet in wallets]
+        self.wallet_list.blockSignals(True)
+        # Przebudowa tylko po zmianie listy: odświeżenie bywa wywołane z sygnału
+        # elementu listy, którego nie wolno wtedy usuwać.
+        if listed != self.listed_wallets:
+            self.listed_wallets = listed
+            self.wallet_list.clear()
+            for wallet_id, name in listed:
+                item = QListWidgetItem(name)
+                item.setData(Qt.ItemDataRole.UserRole, wallet_id)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                self.wallet_list.addItem(item)
+        for row in range(self.wallet_list.count()):
+            item = self.wallet_list.item(row)
+            included = item.data(Qt.ItemDataRole.UserRole) in report["selected_ids"]
+            item.setCheckState(
+                Qt.CheckState.Checked if included else Qt.CheckState.Unchecked
+            )
+        self.wallet_list.blockSignals(False)
+
+        names = [row["name"] for row in report["wallet_totals"]]
+        if len(names) == len(wallets) and len(names) > 1:
+            self.selection_label.setText(f"Wszystkie portfele w {report['currency']}")
+        else:
+            self.selection_label.setText(", ".join(names))
+
+    def _fill_wallet_totals(self, report):
+        """Rozbicie ma sens dopiero przy co najmniej dwóch portfelach."""
+        totals = report["wallet_totals"]
+        several = len(totals) > 1
+        self.wallets_title.setVisible(several)
+        self.wallets_table.setVisible(several)
+        self.wallets_table.setRowCount(len(totals))
+        currency = report["currency"]
+        for row, wallet in enumerate(totals):
+            cells = (
+                wallet["name"],
+                format_money(wallet["income"], currency),
+                format_money(wallet["expense"], currency),
+                format_money(wallet["net"], currency),
+            )
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if column:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                self.wallets_table.setItem(row, column, item)
+        _fit_height(self.wallets_table)
 
     @staticmethod
     def _fill_bars(grid, rows, color, currency):

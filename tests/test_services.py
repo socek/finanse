@@ -258,18 +258,55 @@ def test_report_never_mixes_currencies(db):
     eur = create_wallet(db, "Euro", "EUR")
     add(db, pln, ("A", "1", "11"))
     add(db, eur, ("B", "1", "22"))
-    report = build_report(db, "currency:PLN", "2026-11")
+    report = build_report(db, "PLN", month="2026-11")
     assert (report["expense_total"], report["currency"]) == (1100, "PLN")
-    report = build_report(db, f"wallet:{eur}", "2026-11")
+    report = build_report(db, "EUR", month="2026-11")
     assert (report["expense_total"], report["currency"]) == (2200, "EUR")
+    # Portfel w innej walucie niż wybrana jest pomijany, nawet gdy jest zaznaczony.
+    report = build_report(db, "PLN", {pln, eur}, "2026-11")
+    assert report["expense_total"] == 1100
+    assert report["selected_ids"] == [pln]
+
+
+def test_report_from_chosen_wallets_with_breakdown(db):
+    first = create_wallet(db, "A")
+    second = create_wallet(db, "B")
+    third = create_wallet(db, "C")
+    home = category_id(db, "Dom")
+    add(db, first, ("X", "1", "10", home))
+    add(db, second, ("Y", "1", "20", home))
+    add(db, second, ("Pensja", "1", "100"), kind="income")
+    add(db, third, ("Z", "1", "40", home))
+    add(db, first, ("Poza miesiącem", "1", "7"), on="2026-10-31")
+    create_transfer(db, first, second, "2026-11-05", "", "3")
+
+    report = build_report(db, "PLN", {first, second}, "2026-11")
+    assert report["selected_ids"] == [first, second]
+    assert (report["income_total"], report["expense_total"]) == (10000, 3000)
+    assert report["expenses"][0]["total"] == 3000
+    assert [
+        (w["name"], w["income"], w["expense"], w["net"]) for w in report["wallet_totals"]
+    ] == [("A", 0, 1000, -1000), ("B", 10000, 2000, 8000)]
+    months = {m["key"]: m["expense"] for m in report["trend"]["months"]}
+    assert months["2026-11"] == 3000 and months["2026-10"] == 700
+
+
+def test_report_without_selected_wallets_is_empty(db):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, ("X", "1", "10"))
+    report = build_report(db, "PLN", set(), "2026-11")
+    assert report["selected_ids"] == [] and report["wallet_totals"] == []
+    assert report["expense_total"] == 0
+    assert not report["trend"]["has_data"]
 
 
 @pytest.mark.parametrize(
-    ("scope", "month"), [("", "abc"), ("", "2026-13"), ("zle", ""), ("wallet:999", "")]
+    ("currency", "wallet_ids", "month"),
+    [("", None, "abc"), ("", None, "2026-13"), ("XXX", None, ""), ("", {999}, "")],
 )
-def test_report_survives_bad_parameters(db, scope, month):
+def test_report_survives_bad_parameters(db, currency, wallet_ids, month):
     create_wallet(db, "A")
-    assert build_report(db, scope, month)["currency"] == "PLN"
+    assert build_report(db, currency, wallet_ids, month)["currency"] == "PLN"
 
 
 def test_report_without_wallets(db):
