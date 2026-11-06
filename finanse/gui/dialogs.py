@@ -1,7 +1,6 @@
 """Formularze: portfel, transakcja i przelew."""
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -44,7 +43,7 @@ from ..transactions import (
 )
 from ..transfers import create_transfer, get_transfer, update_transfer
 from ..wallets import create_wallet, list_wallets, update_wallet
-from . import common
+from . import common, shortcuts
 
 
 def _buttons(dialog, accept_text="Zapisz"):
@@ -134,7 +133,7 @@ class _ProductRowsMixin:
         for row in rows or [EMPTY_ROW]:
             self._add_row(row)
 
-        add = QPushButton("Dodaj produkt (Enter)")
+        add = QPushButton(shortcuts.label("Dodaj produkt", "add_product"))
         add.setAutoDefault(False)
         add.clicked.connect(self._next_product)
         bottom = QHBoxLayout()
@@ -144,16 +143,14 @@ class _ProductRowsMixin:
         return bottom
 
     def keyPressEvent(self, event):
-        """Enter przechodzi do kolejnego produktu, a Shift+Enter zapisuje całość."""
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            modifiers = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
-            if modifiers == Qt.KeyboardModifier.ShiftModifier:
-                self.accept()
-                return
-            if modifiers == Qt.KeyboardModifier.NoModifier:
-                self._next_product()
-                return
-        super().keyPressEvent(event)
+        """Klawisze z ustawień: kolejny produkt i zapis całości."""
+        if shortcuts.matches(event, "save"):
+            self.accept()
+        elif shortcuts.matches(event, "add_product"):
+            self._next_product()
+        elif event.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            super().keyPressEvent(event)
+        # Enter bez przypisanego działania nie może zapisywać przez domyślny przycisk.
 
     def _next_product(self):
         """Dodaje wiersz, a jeśli ostatni jest jeszcze pusty, tylko do niego przechodzi."""
@@ -318,7 +315,7 @@ DESCRIPTION_HINT = "np. Zakupy spożywcze"
 
 
 class TransactionDialog(_ProductRowsMixin, _SavingDialog):
-    ACCEPT_TEXT = "Zapisz (Shift+Enter)"
+    ACCEPT_TEXT = "Zapisz"
     # Data ostatnio dodanej transakcji; żyje tylko do zamknięcia aplikacji, żeby wygodnie
     # dopisywać kilka transakcji z przeszłości.
     remembered_date = None
@@ -341,11 +338,10 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.occurred_on = common.date_edit(
             TransactionDialog.remembered_date if is_new else data["occurred_on"]
         )
-        self.today_button = QPushButton("Dzisiaj (Ctrl+T)")
+        self.today_button = QPushButton(shortcuts.label("Dzisiaj", "today"))
         self.today_button.setAutoDefault(False)
         self.today_button.clicked.connect(self.set_today)
-        self.today_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
-        self.today_shortcut.activated.connect(self.set_today)
+        self.today_shortcut = shortcuts.bind("today", self, self.set_today)
         date_row = QHBoxLayout()
         date_row.addWidget(self.occurred_on, 1)
         date_row.addWidget(self.today_button)
@@ -377,7 +373,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
-        layout.addWidget(_buttons(self, self.ACCEPT_TEXT))
+        layout.addWidget(_buttons(self, shortcuts.label(self.ACCEPT_TEXT, "save")))
         self.resize(760, 480)
         if self.wallet_combo is not None:
             self.wallet_combo.currentIndexChanged.connect(self._update_totals)
@@ -437,7 +433,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
 class PaymentDialog(TransactionDialog):
     """Zwykła transakcja wypełniona z szablonu; zapis zmniejsza też licznik."""
 
-    ACCEPT_TEXT = "Zapłać (Shift+Enter)"
+    ACCEPT_TEXT = "Zapłać"
 
     def __init__(self, db, wallet, recurring_id, parent=None):
         self.recurring_id = recurring_id
@@ -516,7 +512,7 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         layout.addWidget(hint)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
-        layout.addWidget(_buttons(self, "Zapisz (Shift+Enter)"))
+        layout.addWidget(_buttons(self, shortcuts.label("Zapisz", "save")))
         self.resize(760, 560)
         self.wallet.currentIndexChanged.connect(self._update_totals)
         self._update_totals()

@@ -100,6 +100,28 @@ class ProductsTab(QWidget):
         layout.addWidget(splitter)
         self.refresh()
 
+    def edit_selected(self):
+        self.edit_transaction()
+
+    def focus_search(self):
+        self.filter_bar.search.setFocus()
+        self.filter_bar.search.selectAll()
+
+    def clear_filters(self):
+        self.filter_bar.clear()
+
+    def expand_all(self):
+        self.tree.expandAll()
+
+    def collapse_all(self):
+        self.tree.collapseAll()
+
+    def check_all(self):
+        self.wallet_list.set_all_checked(True)
+
+    def uncheck_all(self):
+        self.wallet_list.set_all_checked(False)
+
     def refresh(self):
         self.wallet_list.fill(list_wallets(self.db), lambda wallet: wallet["name"])
         self.filter_bar.refresh_categories()

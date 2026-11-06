@@ -1,7 +1,7 @@
 """Zakładka portfeli: lista po lewej, operacje wybranego portfela po prawej."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -26,7 +26,7 @@ from ..wallets import (
     list_wallets,
     load_entries,
 )
-from . import common
+from . import common, shortcuts
 from .day_list import (
     KEY_ROLE,
     RIGHT,
@@ -70,7 +70,7 @@ class WalletsTab(QWidget):
         balance_font.setPointSizeF(balance_font.pointSizeF() * 1.2)
         self.balance.setFont(balance_font)
 
-        self.new_transaction_button = QPushButton("Nowa transakcja (Ctrl+N)")
+        self.new_transaction_button = QPushButton()
         self.new_transaction_button.clicked.connect(self.create_transaction)
         self.transfer_button = QPushButton("Przelew")
         self.transfer_button.clicked.connect(self.create_transfer)
@@ -97,12 +97,12 @@ class WalletsTab(QWidget):
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_entry())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_entry_menu)
-        self.delete_shortcut = QShortcut(
-            QKeySequence(QKeySequence.StandardKey.Delete),
+        self.delete_shortcut = shortcuts.bind(
+            "delete_selected",
             self.tree,
-            context=Qt.ShortcutContext.WidgetShortcut,
+            self.delete_entry,
+            Qt.ShortcutContext.WidgetShortcut,
         )
-        self.delete_shortcut.activated.connect(self.delete_entry)
 
         self.edit_entry_button = QPushButton("Edytuj operację")
         self.edit_entry_button.clicked.connect(self.edit_entry)
@@ -156,7 +156,32 @@ class WalletsTab(QWidget):
         balance = format_money(wallet["balance_cents"], wallet["currency"])
         return f"{wallet['name']}\n{balance}"
 
+    def edit_selected(self):
+        self.edit_entry()
+
+    def focus_search(self):
+        self.filter_bar.search.setFocus()
+        self.filter_bar.search.selectAll()
+
+    def clear_filters(self):
+        self.filter_bar.clear()
+
+    def expand_all(self):
+        self.tree.expandAll()
+
+    def collapse_all(self):
+        self.tree.collapseAll()
+
+    def check_all(self):
+        self.wallet_list.set_all_checked(True)
+
+    def uncheck_all(self):
+        self.wallet_list.set_all_checked(False)
+
     def refresh(self, select=None):
+        self.new_transaction_button.setText(
+            shortcuts.label("Nowa transakcja", "new_transaction")
+        )
         self.wallet_list.fill(
             list_wallets(self.db, self._balance_date()), self._wallet_label, select
         )

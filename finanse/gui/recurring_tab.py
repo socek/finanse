@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from ..money import format_money
 from ..recurring import delete_recurring, list_recurring
 from ..wallets import get_wallet, list_wallets
-from . import common
+from . import common, shortcuts
 from .dialogs import PaymentDialog, RecurringDialog
 
 RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -62,6 +62,9 @@ class RecurringTab(QWidget):
             )
         self.table.itemDoubleClicked.connect(lambda *_: self.edit())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        self.delete_shortcut = shortcuts.bind(
+            "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
+        )
 
         self.edit_button = QPushButton("Edytuj")
         self.edit_button.clicked.connect(self.edit)
@@ -146,6 +149,14 @@ class RecurringTab(QWidget):
         selected = self.selected_id() is not None
         self.edit_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
+
+    def edit_selected(self):
+        self.edit()
+
+    def pay_selected(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            self.table.cellWidget(row, PAY).click()
 
     def create(self):
         if not list_wallets(self.db):

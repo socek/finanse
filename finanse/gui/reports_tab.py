@@ -384,6 +384,18 @@ class ReportsTab(QWidget):
         )
         self.refresh()
 
+    def previous_month(self):
+        self.previous_button.click()
+
+    def next_month(self):
+        self.next_button.click()
+
+    def check_all(self):
+        self.select_all_button.click()
+
+    def uncheck_all(self):
+        self.select_none_button.click()
+
     def show_month(self, key):
         self.month = key
         self.refresh()

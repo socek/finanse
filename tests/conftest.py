@@ -38,3 +38,12 @@ def restore_system_theme():
 
     if QApplication.instance():
         apply_theme("system")
+
+
+@pytest.fixture(autouse=True)
+def default_shortcuts():
+    from finanse.gui import shortcuts
+
+    shortcuts.forget()
+    yield
+    shortcuts.forget()

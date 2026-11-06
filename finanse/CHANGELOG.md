@@ -43,3 +43,4 @@ Pierwsza wersja aplikacji okienkowej.
 - Plik `.desktop` z wpisem w menu programów i klasą okna `finanse`.
 - Zakładka O programie z wersją i historią zmian.
 - Zakładka Ustawienia z wyborem motywu: systemowy, jasny, ciemny, sepia lub kolorowy.
+- Skróty klawiszowe do większości działań, z możliwością zmiany w Ustawieniach.

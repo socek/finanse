@@ -19,7 +19,7 @@ from ..categories import (
     rename_category,
 )
 from ..errors import ValidationError
-from . import common
+from . import common, shortcuts
 
 
 class CategoriesTab(QWidget):
@@ -48,6 +48,9 @@ class CategoriesTab(QWidget):
         )
         self.table.itemDoubleClicked.connect(lambda *_: self.rename())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        self.delete_shortcut = shortcuts.bind(
+            "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
+        )
         self.empty = QLabel("Nie masz jeszcze kategorii.")
 
         self.rename_button = QPushButton("Zmień nazwę")
@@ -65,6 +68,9 @@ class CategoriesTab(QWidget):
         layout.addWidget(self.table, 1)
         layout.addLayout(actions)
         self.refresh()
+
+    def edit_selected(self):
+        self.rename()
 
     def refresh(self):
         categories = list_categories(self.db)
