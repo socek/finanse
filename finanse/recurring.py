@@ -47,6 +47,7 @@ def get_recurring(db, recurring_id):
             "category": product["category_id"],
             "quantity": format_quantity(product["quantity_milli"]),
             "price": format_money_input(product["unit_price_cents"]),
+            "total": format_money_input(product["total_cents"]),
         }
         for product in db.execute(
             "SELECT * FROM recurring_products WHERE recurring_id = ? ORDER BY position",

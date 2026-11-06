@@ -11,7 +11,7 @@ from .money import (
 )
 
 MAX_TEXT_LENGTH = 200
-EMPTY_ROW = {"name": "", "category": None, "quantity": "1", "price": ""}
+EMPTY_ROW = {"name": "", "category": None, "quantity": "1", "price": "", "total": ""}
 
 
 def parse_product_rows(rows, category_ids, required=True):
@@ -22,8 +22,9 @@ def parse_product_rows(rows, category_ids, required=True):
         name = row.get("name", "").strip()
         quantity = row.get("quantity", "").strip()
         price = row.get("price", "").strip()
+        total = row.get("total", "").strip()
         category = row.get("category")
-        if not name and not price and quantity in ("", "1"):
+        if not name and not price and not total and quantity in ("", "1"):
             continue
         number += 1
 
@@ -44,13 +45,24 @@ def parse_product_rows(rows, category_ids, required=True):
         if price_cents < 0:
             errors.append(f"Produkt {number}: niepoprawna cena.")
             continue
+        # Podana wartość ma pierwszeństwo: cena wyliczona z niej jest zaokrąglona,
+        # więc ilość razy cena nie musi dać dokładnie tej samej kwoty.
+        total_cents = line_total(quantity_milli, price_cents)
+        if total:
+            try:
+                total_cents = parse_money(total)
+            except ValueError:
+                total_cents = -1
+            if total_cents < 0:
+                errors.append(f"Produkt {number}: niepoprawna wartość.")
+                continue
         products.append(
             {
                 "name": name,
                 "category_id": category,
                 "quantity_milli": quantity_milli,
                 "unit_price_cents": price_cents,
-                "total_cents": line_total(quantity_milli, price_cents),
+                "total_cents": total_cents,
             }
         )
 
@@ -147,6 +159,7 @@ def get_transaction(db, transaction_id):
             "category": product["category_id"],
             "quantity": format_quantity(product["quantity_milli"]),
             "price": format_money_input(product["unit_price_cents"]),
+            "total": format_money_input(product["total_cents"]),
         }
         for product in db.execute(
             "SELECT * FROM products WHERE transaction_id = ? ORDER BY position",

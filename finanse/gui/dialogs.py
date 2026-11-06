@@ -26,6 +26,7 @@ from ..money import (
     line_total,
     parse_money,
     parse_quantity,
+    unit_price,
 )
 from ..recurring import (
     create_recurring,
@@ -153,30 +154,88 @@ class _ProductRowsMixin:
         category.setCurrentIndex(max(found, 0))
         quantity = QLineEdit(row["quantity"])
         price = QLineEdit(row["price"])
+        value = QLineEdit()
+        value.setAlignment(Qt.AlignmentFlag.AlignRight)
+        computed = self._line_value(quantity.text(), price.text())
+        stored = row.get("total", "")
+        value.setText(stored or computed)
+        # Wartość jest stała, gdy nie wynika z ilości i ceny, np. 10,00 przy 3 sztukach.
+        value.setProperty("fixed", bool(stored) and stored != computed)
         remove = QToolButton()
         remove.setText("Usuń")
         remove.clicked.connect(lambda: self._remove_row(remove))
+
         name.textChanged.connect(self._update_totals)
-        quantity.textChanged.connect(self._update_totals)
-        price.textChanged.connect(self._update_totals)
+        quantity.textChanged.connect(lambda: self._quantity_edited(quantity, price, value))
+        price.textChanged.connect(lambda: self._price_edited(quantity, price, value))
+        value.textChanged.connect(lambda: self._value_edited(quantity, price, value))
 
         self.table.setCellWidget(index, self.NAME, name)
         self.table.setCellWidget(index, self.CATEGORY, category)
         self.table.setCellWidget(index, self.QUANTITY, quantity)
         self.table.setCellWidget(index, self.PRICE, price)
-        value = QTableWidgetItem("")
-        value.setFlags(value.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        value.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.table.setItem(index, self.VALUE, value)
+        self.table.setCellWidget(index, self.VALUE, value)
         self.table.setCellWidget(index, self.REMOVE, remove)
         if focus:
             name.setFocus()
             self._update_totals()
 
+    @staticmethod
+    def _line_value(quantity, price):
+        """Wartość z ilości i ceny jako tekst; pusty, gdy któreś pole jest niepoprawne."""
+        try:
+            cents = parse_money(price)
+            if cents < 0:
+                return ""
+            return format_money_input(line_total(parse_quantity(quantity), cents))
+        except ValueError:
+            return ""
+
+    @staticmethod
+    def _set_quietly(field, text):
+        """Ustawia wyliczone pole bez uruchamiania jego własnej obsługi zmiany."""
+        field.blockSignals(True)
+        field.setText(text)
+        field.blockSignals(False)
+
+    def _sync_value(self, quantity, price, value):
+        self._set_quietly(value, self._line_value(quantity.text(), price.text()))
+
+    def _sync_price(self, quantity, price, value):
+        """Niepoprawne pole zostawia cenę bez zmian; błąd zgłosi dopiero zapis."""
+        try:
+            cents = parse_money(value.text())
+            if cents >= 0:
+                milli = parse_quantity(quantity.text())
+                self._set_quietly(price, format_money_input(unit_price(cents, milli)))
+        except ValueError:
+            pass
+
+    def _quantity_edited(self, quantity, price, value):
+        """Ilość przelicza to pole, które użytkownik zmienił jako ostatnie."""
+        if value.property("fixed"):
+            self._sync_price(quantity, price, value)
+        else:
+            self._sync_value(quantity, price, value)
+        self._update_totals()
+
+    def _price_edited(self, quantity, price, value):
+        value.setProperty("fixed", False)
+        self._sync_value(quantity, price, value)
+        self._update_totals()
+
+    def _value_edited(self, quantity, price, value):
+        # Puste pole w trakcie pisania niczego nie nadpisuje.
+        value.setProperty("fixed", bool(value.text().strip()))
+        if value.property("fixed"):
+            self._sync_price(quantity, price, value)
+        self._update_totals()
+
     def _remove_row(self, button):
         if self.table.rowCount() == 1:
             self.table.cellWidget(0, self.NAME).clear()
             self.table.cellWidget(0, self.CATEGORY).setCurrentIndex(0)
+            self.table.cellWidget(0, self.VALUE).clear()
             self.table.cellWidget(0, self.QUANTITY).setText("1")
             self.table.cellWidget(0, self.PRICE).clear()
         else:
@@ -186,35 +245,37 @@ class _ProductRowsMixin:
                     break
         self._update_totals()
 
-    @staticmethod
-    def _row_total(quantity, price):
-        """Wartość do podglądu; niepoprawne pole zgłosi dopiero zapis."""
+    def _row_total(self, index):
+        """Wartość do sumy; niepoprawne pole zgłosi dopiero zapis."""
+        text = self.table.cellWidget(index, self.VALUE).text().strip()
+        if not text:
+            text = self._line_value(
+                self.table.cellWidget(index, self.QUANTITY).text(),
+                self.table.cellWidget(index, self.PRICE).text(),
+            )
         try:
-            return line_total(parse_quantity(quantity), max(parse_money(price), 0))
+            return max(parse_money(text), 0)
         except ValueError:
             return 0
 
     def _update_totals(self):
-        total = 0
-        for index in range(self.table.rowCount()):
-            cents = self._row_total(
-                self.table.cellWidget(index, self.QUANTITY).text(),
-                self.table.cellWidget(index, self.PRICE).text(),
-            )
-            total += cents
-            self.table.item(index, self.VALUE).setText(format_money(cents))
+        total = sum(self._row_total(index) for index in range(self.table.rowCount()))
         self.total.setText(f"Suma: {format_money(total, self._currency())}")
 
     def rows(self):
-        return [
-            {
-                "name": self.table.cellWidget(index, self.NAME).text(),
-                "category": self.table.cellWidget(index, self.CATEGORY).currentData(),
-                "quantity": self.table.cellWidget(index, self.QUANTITY).text(),
-                "price": self.table.cellWidget(index, self.PRICE).text(),
-            }
-            for index in range(self.table.rowCount())
-        ]
+        rows = []
+        for index in range(self.table.rowCount()):
+            value = self.table.cellWidget(index, self.VALUE)
+            rows.append(
+                {
+                    "name": self.table.cellWidget(index, self.NAME).text(),
+                    "category": self.table.cellWidget(index, self.CATEGORY).currentData(),
+                    "quantity": self.table.cellWidget(index, self.QUANTITY).text(),
+                    "price": self.table.cellWidget(index, self.PRICE).text(),
+                    "total": value.text() if value.property("fixed") else "",
+                }
+            )
+        return rows
 
 
 def _kind_combo(selected):
@@ -299,6 +360,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
             for row in self.rows()
             if row["name"].strip()
             or row["price"].strip()
+            or row["total"].strip()
             or row["quantity"].strip() not in ("", "1")
         ]
         return filled[0]["name"].strip() if len(filled) == 1 else ""
@@ -417,7 +479,8 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
 
     def _has_products(self):
         return any(
-            row["name"].strip() or row["price"].strip() for row in self.rows()
+            row["name"].strip() or row["price"].strip() or row["total"].strip()
+            for row in self.rows()
         )
 
     def _update_totals(self):

@@ -88,7 +88,7 @@ def test_payment_without_products_creates_one_product(db):
         wallet, "expense", "2026-11-05",
     )  # fmt: skip
     assert saved["rows"] == [
-        {"name": "Czynsz", "category": dom, "quantity": "1", "price": "30,00"}
+        {"name": "Czynsz", "category": dom, "quantity": "1", "price": "30,00", "total": "30,00"}
     ]
     assert get_wallet(db, wallet)["balance_cents"] == 7000
     assert get_recurring(db, recurring)["last_paid_on"] == "2026-11-05"
@@ -101,6 +101,17 @@ def test_payment_copies_products_and_income_kind(db):
     assert saved["kind"] == "income"
     assert saved["rows"][0]["name"] == "X" and saved["rows"][0]["quantity"] == "2"
     assert get_wallet(db, wallet)["balance_cents"] == 1000
+
+
+def test_given_value_passes_from_template_to_payment(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Media", rows=[
+        {"name": "Woda", "category": None, "quantity": "3", "price": "3,33", "total": "10"},
+    ])  # fmt: skip
+    assert list_recurring(db)[0]["total_cents"] == 1000
+    assert get_recurring(db, recurring)["rows"][0]["total"] == "10,00"
+    pay_draft(db, recurring)
+    assert get_wallet(db, wallet)["balance_cents"] == -1000
 
 
 def test_counter_decreases_and_blocks_at_zero(db):

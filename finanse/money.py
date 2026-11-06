@@ -39,6 +39,11 @@ def line_total(quantity_milli, unit_price_cents):
     return (quantity_milli * unit_price_cents + 500) // 1000
 
 
+def unit_price(total_cents, quantity_milli):
+    """Cena jednostkowa w groszach dla podanej wartości, zaokrąglona połowę w górę."""
+    return (2000 * total_cents + quantity_milli) // (2 * quantity_milli)
+
+
 def format_money(cents, currency=""):
     sign = "-" if cents < 0 else ""
     whole, fraction = divmod(abs(cents), 100)

@@ -1,6 +1,7 @@
 import pytest
 
 from finanse.money import (
+    unit_price,
     format_money,
     format_money_input,
     format_quantity,
@@ -60,3 +61,21 @@ def test_formatting():
     assert format_quantity(1000) == "1"
     assert format_quantity(1500) == "1,5"
     assert format_quantity(1255) == "1,255"
+
+
+@pytest.mark.parametrize(
+    ("total", "quantity", "price"),
+    [
+        (1000, 1000, 1000),
+        (1000, 4000, 250),
+        (1000, 3000, 333),
+        (2000, 3000, 667),
+        (100, 2000, 50),
+        (5, 2000, 3),  # połowa grosza w górę
+        (0, 1000, 0),
+        (1000, 500, 2000),  # pół sztuki
+        (62030, 72380, 857),
+    ],
+)
+def test_unit_price(total, quantity, price):
+    assert unit_price(total, quantity) == price

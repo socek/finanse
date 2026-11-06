@@ -422,6 +422,152 @@ def test_suggestion_only_in_new_transaction(db, errors):
     assert payment.suggested_description() == ""
 
 
+def _cells(dialog, row=0):
+    return (
+        dialog.table.cellWidget(row, dialog.QUANTITY),
+        dialog.table.cellWidget(row, dialog.PRICE),
+        dialog.table.cellWidget(row, dialog.VALUE),
+    )
+
+
+def test_price_and_quantity_calculate_value(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    assert value.isEnabled() and not value.isReadOnly()
+    price.setText("5")
+    assert value.text() == "5,00"
+    quantity.setText("3")
+    assert value.text() == "15,00"
+    assert price.text() == "5"  # wpisana cena zostaje
+    assert "15,00" in dialog.total.text()
+
+
+def test_value_calculates_price(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    quantity.setText("4")
+    value.setText("100")
+    assert price.text() == "25,00"
+    assert value.text() == "100"  # wpisana wartość zostaje
+    assert "100,00" in dialog.total.text()
+
+    quantity.setText("5")  # ostatnio zmieniana była wartość, więc przelicza się cena
+    assert price.text() == "20,00"
+    assert value.text() == "100"
+
+    price.setText("30")  # teraz ostatnia jest cena, więc przelicza się wartość
+    assert value.text() == "150,00"
+    quantity.setText("2")
+    assert price.text() == "30"
+    assert value.text() == "60,00"
+
+
+def test_rounded_price_keeps_entered_value_when_saved(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    dialog.table.cellWidget(0, dialog.NAME).setText("Ser")
+    quantity.setText("3")
+    value.setText("10")
+    assert price.text() == "3,33"
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    row = db.execute("SELECT unit_price_cents, total_cents FROM products").fetchone()
+    assert tuple(row) == (333, 1000)
+
+    # Ponowne otwarcie i zapis nie zmieniają wartości na 9,99.
+    edit = TransactionDialog(db, get_wallet(db, 1), dialog.transaction_id)
+    assert _cells(edit)[2].text() == "10,00"
+    assert _cells(edit)[1].text() == "3,33"
+    assert "10,00" in edit.total.text()
+    edit.accept()
+    assert db.execute("SELECT total_cents FROM products").fetchone()[0] == 1000
+
+    # Zmiana ilości w edycji przelicza cenę, bo wartość nie wynika z ceny.
+    edit = TransactionDialog(db, get_wallet(db, 1), dialog.transaction_id)
+    _cells(edit)[0].setText("2")
+    assert _cells(edit)[1].text() == "5,00"
+
+
+def test_editing_regular_product_recalculates_value_from_price(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet, price="5")
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    quantity, price, value = _cells(edit)
+    assert value.text() == "5,00"
+    quantity.setText("2")
+    assert value.text() == "10,00"
+    assert price.text() == "5,00"
+
+
+def test_clearing_value_while_typing_overwrites_nothing(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    value.setText("100")
+    value.clear()
+    assert price.text() == "100,00"
+    assert value.text() == ""
+    value.setText("80")
+    assert price.text() == "80,00"
+
+
+def test_value_without_name_and_invalid_inputs(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    dialog.description.setText("Zakupy")
+    value.setText("abc")
+    assert price.text() == ""  # niepoprawna wartość niczego nie wylicza
+    assert "0,00" in dialog.total.text()
+    dialog.table.cellWidget(0, dialog.NAME).setText("Ser")
+    dialog.accept()
+    assert any("niepoprawna cena" in error for error in errors)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+
+    errors.clear()
+    value.setText("10")
+    quantity.setText("abc")
+    assert price.text() == "10,00"  # zostaje do czasu poprawienia ilości
+    dialog.accept()
+    assert any("niepoprawna ilość" in error for error in errors)
+
+    errors.clear()
+    quantity.setText("0")
+    dialog.accept()
+    assert any("niepoprawna ilość" in error for error in errors)
+    quantity.setText("2")
+    assert price.text() == "5,00"
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+
+def test_removing_last_row_clears_value(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    value.setText("100")
+    dialog._remove_row(dialog.table.cellWidget(0, dialog.REMOVE))
+    quantity, price, value = _cells(dialog)
+    assert (quantity.text(), price.text(), value.text()) == ("1", "", "")
+    price.setText("5")  # po wyczyszczeniu wiersz znów liczy wartość z ceny
+    assert value.text() == "5,00"
+    assert dialog.rows()[0]["total"] == ""
+
+
+def test_value_works_in_recurring_dialog(db, errors):
+    create_wallet(db, "A")
+    dialog = RecurringDialog(db)
+    quantity, price, value = _cells(dialog)
+    dialog.description.setText("Media")
+    dialog.table.cellWidget(0, dialog.NAME).setText("Woda")
+    quantity.setText("3")
+    value.setText("10")
+    assert price.text() == "3,33"
+    assert not dialog.amount.isEnabled()
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    payment = PaymentDialog(db, get_wallet(db, 1), dialog.recurring_id)
+    assert _cells(payment)[2].text() == "10,00"
+    assert "10,00" in payment.total.text()
+
+
 def test_saved_transaction_makes_its_wallet_visible(db, errors, monkeypatch):
     first = create_wallet(db, "A")
     second = create_wallet(db, "B")

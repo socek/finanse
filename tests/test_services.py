@@ -127,7 +127,7 @@ def test_edit_replaces_products_and_keeps_import_hash(db):
 
     data = get_transaction(db, transaction)
     assert data["rows"][0] == {
-        "name": "Chleb", "category": food, "quantity": "1", "price": "5,00",
+        "name": "Chleb", "category": food, "quantity": "1", "price": "5,00", "total": "5,00",
     }  # fmt: skip
 
     update_transaction(
@@ -329,6 +329,31 @@ def test_last_transaction_date(db):
     assert last_transaction_date(db, [first, second]) == "2026-11-05"
     assert last_transaction_date(db, [empty]) is None
     assert last_transaction_date(db, []) is None
+
+
+def test_given_value_wins_over_rounded_price_and_survives_edit(db):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    transaction = create_transaction(db, wallet, "expense", "2026-11-05", "Zakupy", [
+        {"name": "Ser", "category": None, "quantity": "3", "price": "3,33", "total": "10"},
+    ])  # fmt: skip
+    row = db.execute("SELECT unit_price_cents, total_cents FROM products").fetchone()
+    assert tuple(row) == (333, 1000)
+    assert balance(db, wallet) == 9000
+
+    rows = get_transaction(db, transaction)["rows"]
+    assert rows[0]["total"] == "10,00"
+    update_transaction(db, transaction, "expense", "2026-11-05", "Zakupy", rows)
+    assert db.execute("SELECT total_cents FROM products").fetchone()[0] == 1000
+
+
+@pytest.mark.parametrize("total", ["abc", "-5"])
+def test_invalid_value_saves_nothing(db, total):
+    wallet = create_wallet(db, "A")
+    with pytest.raises(ValidationError, match="niepoprawna wartość"):
+        create_transaction(db, wallet, "expense", "2026-11-05", "Zakupy", [
+            {"name": "Ser", "category": None, "quantity": "1", "price": "1", "total": total},
+        ])  # fmt: skip
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
 
 
 def test_transfer_moves_money(db):
