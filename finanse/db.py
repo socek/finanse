@@ -9,8 +9,30 @@ STARTUP_BACKUPS_KEPT = 30
 _STARTUP_BACKUP_NAME = re.compile(r"finanse-[0-9]{8}-[0-9]{6}\.db")
 
 
+class Connection(sqlite3.Connection):
+    """`with db:` to jedna operacja, która łączy zapisane w niej zmiany w dzienniku."""
+
+    def __enter__(self):
+        self._operation_id = self.execute(
+            "INSERT INTO operations DEFAULT VALUES"
+        ).lastrowid
+        return super().__enter__()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self.execute(
+                "UPDATE operations SET is_open = 0 WHERE id = ?", (self._operation_id,)
+            )
+            self.execute(
+                "DELETE FROM operations WHERE id = ? AND NOT EXISTS"
+                " (SELECT 1 FROM change_log WHERE operation_id = operations.id)",
+                (self._operation_id,),
+            )
+        return super().__exit__(exc_type, exc_value, traceback)
+
+
 def connect(path):
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, factory=Connection)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

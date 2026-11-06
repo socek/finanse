@@ -16,7 +16,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
   portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
-- automatyczna kopia bazy przy każdym uruchomieniu
+- historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
 
 ## Uruchomienie
 
@@ -39,7 +39,13 @@ Migracja 3 usuwa konta. Baza z więcej niż jednym kontem nie zostanie zmigrowan
 bo ich danych nie da się bezpiecznie scalić: aplikacja pokaże błąd i nic nie zmieni.
 Kopie sprzed tej migracji nadal zawierają tabelę `users` z hashami haseł.
 
-## Kopie
+## Historia i kopie
+
+Triggery zapisują każdą zmianę w tabeli `change_log`, razem ze starymi i nowymi
+wartościami, także zmiany wykonane poza aplikacją, np. w konsoli `sqlite3`. Zakładka
+**Historia** pokazuje je jako tekst. Dziennik nie jest czyszczony, więc zostają w nim
+również usunięte dane. Nie ma jeszcze przycisku cofania zmian. Nowa kolumna lub tabela
+wymaga przebudowy triggerów w migracji.
 
 Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `instance/backups/`
 i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
@@ -78,6 +84,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `products` – pozycje transakcji: nazwa, kategoria, ilość, cena, wartość
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
 - `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
+- `operations`, `change_log` – dziennik zmian
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

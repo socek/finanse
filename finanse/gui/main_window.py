@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from .categories_tab import CategoriesTab
+from .history_tab import HistoryTab
 from .products_tab import ProductsTab
 from .recurring_tab import RecurringTab
 from .reports_tab import ReportsTab
@@ -18,6 +19,7 @@ class MainWindow(QMainWindow):
         self.recurring = RecurringTab(db)
         self.reports = ReportsTab(db)
         self.categories = CategoriesTab(db)
+        self.history = HistoryTab(db)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.wallets, "Portfele")
@@ -25,6 +27,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.recurring, "Cykliczne")
         self.tabs.addTab(self.reports, "Raporty")
         self.tabs.addTab(self.categories, "Kategorie")
+        self.tabs.addTab(self.history, "Historia")
         # Każda zakładka czyta z bazy przy wejściu, więc widzi zmiany z pozostałych.
         self.tabs.currentChanged.connect(lambda _: self.tabs.currentWidget().refresh())
         self.setCentralWidget(self.tabs)

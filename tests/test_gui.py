@@ -649,12 +649,21 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 5
+    assert window.tabs.count() == 6
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None
     window.tabs.setCurrentWidget(window.wallets)
     assert window.wallets.wallet_list.count() == 1
+
+
+def test_history_tab_shows_changes_as_read_only_text(db, errors):
+    window = MainWindow(db)
+    assert "Historia jest pusta" in window.history.text.toPlainText()
+    create_wallet(db, "<b>Portfel</b>")
+    window.tabs.setCurrentWidget(window.history)
+    assert "Dodano portfel „<b>Portfel</b>”" in window.history.text.toPlainText()
+    assert window.history.text.isReadOnly()
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
