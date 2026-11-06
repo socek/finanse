@@ -1,6 +1,6 @@
 """Lista produktów portfela, niezależna od tego, w jakim rachunku się znalazły."""
 
-from .wallets import NO_CATEGORY, EntryFilters
+from .wallets import NO_CATEGORY, EntryFilters, add_to_totals
 
 
 def _matches(product, filters):
@@ -18,10 +18,12 @@ def _matches(product, filters):
     return not text or text in product["name"].casefold()
 
 
-def load_products(db, wallet_id, date_from="", date_to="", filters=EntryFilters()):
-    """Pasujące produkty z okresu, od najnowszych, oraz sumy przychodów i wydatków."""
+def load_products(db, wallet_ids, date_from="", date_to="", filters=EntryFilters()):
+    """Pasujące produkty z okresu, od najnowszych, z sumami osobno dla każdej waluty."""
+    wallet_ids = list(wallet_ids)
+    marks = ",".join("?" * len(wallet_ids))
     period = ""
-    args = [wallet_id]
+    args = list(wallet_ids)
     if date_from:
         period += " AND t.occurred_on >= ?"
         args.append(date_from)
@@ -33,20 +35,21 @@ def load_products(db, wallet_id, date_from="", date_to="", filters=EntryFilters(
         SELECT p.id, p.transaction_id, p.name, p.category_id, p.quantity_milli,
                p.unit_price_cents, p.total_cents,
                c.name AS category_name,
-               t.kind, t.occurred_on, t.description
+               t.kind, t.occurred_on, t.description,
+               w.name AS wallet_name, w.currency
         FROM products p
         JOIN transactions t ON t.id = p.transaction_id
+        JOIN wallets w ON w.id = t.wallet_id
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE t.wallet_id = ? {period}
+        WHERE t.wallet_id IN ({marks}) {period}
         ORDER BY t.occurred_on DESC, t.created_at DESC, t.id DESC, p.position
         """,
         args,
     ).fetchall()
     products = [row for row in rows if _matches(row, filters)]
-    summary = {
-        kind: sum(p["total_cents"] for p in products if p["kind"] == kind)
-        for kind in ("income", "expense")
-    }
+    summary = {"income": {}, "expense": {}}
+    for product in products:
+        add_to_totals(summary[product["kind"]], product["currency"], product["total_cents"])
     return products, summary
 
 
@@ -59,11 +62,11 @@ def group_products_by_day(products):
                 {
                     "date": product["occurred_on"],
                     "entries": [],
-                    "income": 0,
-                    "expense": 0,
+                    "income": {},
+                    "expense": {},
                 }
             )
         day = days[-1]
         day["entries"].append(product)
-        day[product["kind"]] += product["total_cents"]
+        add_to_totals(day[product["kind"]], product["currency"], product["total_cents"])
     return days

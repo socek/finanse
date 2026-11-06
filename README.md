@@ -9,7 +9,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 
 - portfele z własną walutą i saldem początkowym
 - transakcje z wieloma produktami oraz osobne listy transakcji i produktów według
-  dni, z szukaniem po nazwie i filtrami po dacie, kategorii i kwocie
+  dni, z wielu wybranych portfeli naraz, z szukaniem po nazwie i filtrami po dacie,
+  kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - przelewy między portfelami, także w różnych walutach
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami i licznikiem
@@ -56,7 +57,7 @@ oraz sumy dla każdej grupy i całości.
 
 ## Import z banku
 
-Wybierz portfel, kliknij **Import CSV** i wskaż plik z banku. Aplikacja rozpoznaje
+Kliknij portfel prawym przyciskiem myszy, wybierz **Import CSV** i wskaż plik z banku. Aplikacja rozpoznaje
 kodowanie, separator i kolumny, a przed zapisem pokazuje podgląd, w którym można
 to poprawić. Każdy wiersz staje się transakcją z jednym produktem: kwoty ujemne
 to wydatki, a dodatnie to przychody.

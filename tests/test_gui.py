@@ -120,11 +120,11 @@ def test_wallets_tab_lists_entries_and_filters(db, errors):
     assert tab.tree.topLevelItemCount() == 2
     transfer_day, purchase_day = tab.tree.topLevelItem(0), tab.tree.topLevelItem(1)
     assert transfer_day.text(0) == "2026-11-01"
-    assert transfer_day.child(0).text(2) == "Przelew"
+    assert transfer_day.child(0).text(3) == "Przelew"
     assert "→ B" in transfer_day.child(0).text(1)
     assert purchase_day.child(0).text(1) == "Zakupy"
     assert purchase_day.child(0).childCount() == 0  # produkty są w osobnej zakładce
-    assert tab.tree.columnCount() == 6
+    assert tab.tree.columnCount() == 7
 
     tab.filter_bar.date_from.setDate(QDate(2026, 10, 15))
     tab.filter_bar.use_from.setChecked(True)
@@ -155,7 +155,7 @@ def test_day_row_sums_income_and_expense_separately(db, errors):
     assert day.text(0) == "2026-11-05" and day.childCount() == 4
     assert day.isExpanded()
     plain = lambda text: text.replace("\xa0", " ")  # noqa: E731
-    income_column, expense_column = 4, 5
+    income_column, expense_column = 5, 6
     assert plain(day.text(income_column)) == "+20,00 PLN"
     assert plain(day.text(expense_column)) == "−12,50 PLN"
     older = tab.tree.topLevelItem(1)
@@ -186,11 +186,200 @@ def test_refresh_keeps_collapsed_days_and_selection(db, errors):
     assert tab.tree.topLevelItem(2).isExpanded()
     assert not tab.tree.topLevelItem(1).isExpanded()
 
-    tab.wallet_list.setCurrentRow(1)  # inny portfel startuje w pełni rozwinięty
-    assert tab.tree.topLevelItem(0).isExpanded()
+    # Zmiana zaznaczenia portfeli znów rozwija całą listę.
+    tab.wallet_list.item(1).setCheckState(Qt.CheckState.Unchecked)
+    assert all(
+        tab.tree.topLevelItem(i).isExpanded() for i in range(tab.tree.topLevelItemCount())
+    )
     assert tab.selected_entry() is None
-    tab.wallet_list.setCurrentRow(0)
-    assert tab.tree.topLevelItem(1).isExpanded()
+
+
+def _check_wallet(tab, row, checked):
+    state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+    tab.wallet_list.item(row).setCheckState(state)
+
+
+def _plain(text):
+    return text.replace("\xa0", " ")
+
+
+def _three_wallets(db):
+    first = create_wallet(db, "A", "PLN", "100")
+    second = create_wallet(db, "B", "PLN", "50")
+    euro = create_wallet(db, "C", "EUR", "10")
+    add(db, first, name="Chleb", price="5", on="2026-11-05")
+    add(db, second, name="Ser", price="7", on="2026-11-05")
+    add(db, euro, name="Kawa", price="2", on="2026-11-05")
+    return first, second, euro
+
+
+def test_transactions_list_starts_with_all_wallets_and_narrows(db, errors):
+    first, second, euro = _three_wallets(db)
+    tab = WalletsTab(db)
+    assert tab.wallet_list.checked_ids() == {first, second, euro}
+    assert tab.title.text() == "Wybrane portfele: 3"
+    assert _plain(tab.balance.text()) == "8,00 EUR, 138,00 PLN"
+    day = tab.tree.topLevelItem(0)
+    assert day.childCount() == 3
+    assert _plain(day.text(6)) == "−2,00 EUR, −12,00 PLN"
+    assert not tab.tree.isColumnHidden(2)
+    assert sorted(day.child(i).text(2) for i in range(3)) == ["A", "B", "C"]
+
+    _check_wallet(tab, 2, False)
+    assert tab.title.text() == "Wybrane portfele: 2"
+    assert _plain(tab.tree.topLevelItem(0).text(6)) == "−12,00 PLN"
+
+    _check_wallet(tab, 1, False)
+    assert tab.title.text() == "A"
+    assert tab.tree.isColumnHidden(2)  # jeden portfel nie wymaga tej kolumny
+    assert tab.tree.topLevelItem(0).childCount() == 1
+
+    _check_wallet(tab, 0, False)
+    assert tab.title.text() == "Nie wybrano portfela"
+    assert tab.tree.topLevelItemCount() == 0
+    assert "Zaznacz co najmniej jeden" in tab.empty.text()
+    assert not tab.empty.isHidden()
+
+    tab.wallet_list.set_all_checked(True)
+    assert tab.tree.topLevelItem(0).childCount() == 3
+
+
+def test_products_list_starts_with_all_wallets_and_narrows(db, errors):
+    first, second, euro = _three_wallets(db)
+    tab = ProductsTab(db)
+    assert tab.wallet_list.checked_ids() == {first, second, euro}
+    assert tab.title.text() == "Wybrane portfele: 3"
+    assert _product_names(tab) == ["Chleb", "Kawa", "Ser"]
+    assert _plain(tab.tree.topLevelItem(0).text(9)) == "−2,00 EUR, −12,00 PLN"
+    euro_row = next(
+        tab.tree.topLevelItem(0).child(i)
+        for i in range(3)
+        if tab.tree.topLevelItem(0).child(i).text(1) == "Kawa"
+    )
+    assert euro_row.text(3) == "C" and "EUR" in euro_row.text(7)
+
+    _check_wallet(tab, 0, False)
+    assert _product_names(tab) == ["Kawa", "Ser"]
+    tab.wallet_list.set_all_checked(False)
+    assert _product_names(tab) == []
+    assert "Zaznacz co najmniej jeden" in tab.empty.text()
+
+
+def test_transfer_row_depends_on_selected_wallets(db, errors):
+    source = create_wallet(db, "A", "PLN", "100")
+    target = create_wallet(db, "B")
+    create_transfer(db, source, target, "2026-11-05", "", "50")
+    tab = WalletsTab(db)
+    row = tab.tree.topLevelItem(0).child(0)
+    assert "(A → B)" in row.text(1)
+    assert _plain(row.text(4)) == "50,00 PLN"
+    assert tab.tree.topLevelItem(0).text(6) == ""
+
+    _check_wallet(tab, 1, False)
+    assert _plain(tab.tree.topLevelItem(0).child(0).text(4)) == "−50,00 PLN"
+    _check_wallet(tab, 1, True)
+    _check_wallet(tab, 0, False)
+    row = tab.tree.topLevelItem(0).child(0)
+    assert "(← A)" in row.text(1)
+    assert _plain(row.text(4)) == "+50,00 PLN"
+
+
+def test_selection_survives_refresh_and_new_wallet_is_checked(db, errors):
+    first = create_wallet(db, "A")
+    second = create_wallet(db, "B")
+    tab = WalletsTab(db)
+    _check_wallet(tab, 1, False)
+    tab.refresh()
+    assert tab.wallet_list.checked_ids() == {first}
+    assert second not in tab.wallet_list.checked_ids()
+    third = create_wallet(db, "C")
+    tab.refresh()
+    assert tab.wallet_list.checked_ids() == {first, third}
+
+
+def test_wallet_context_menu_replaces_buttons(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    tab = WalletsTab(db)
+    menu = tab._wallet_menu()
+    assert [action.text() for action in menu.actions()] == [
+        "Nowa transakcja",
+        "Import CSV",
+        "Edytuj portfel",
+        "Usuń portfel",
+    ]
+    for name in ("import_button", "edit_wallet_button", "delete_wallet_button"):
+        assert not hasattr(tab, name)
+
+    created = []
+
+    def exec_recording(dialog):
+        created.append(dialog.selected_wallet_id())
+        return 0
+
+    monkeypatch.setattr(TransactionDialog, "exec", exec_recording)
+    menu.actions()[0].trigger()
+    assert created == [wallet]
+    menu.actions()[3].trigger()
+    assert list_wallets(db) == []
+
+
+def test_empty_wallet_list_has_no_menu(db, errors):
+    assert WalletsTab(db)._wallet_menu() is None
+
+
+def test_new_transaction_dialog_chooses_wallet(db, errors):
+    first = create_wallet(db, "A", "PLN")
+    euro = create_wallet(db, "B", "EUR")
+    dialog = TransactionDialog(db, get_wallet(db, first))
+    assert dialog.wallet_combo.currentData() == first
+    assert "PLN" in dialog.total.text()
+    dialog.wallet_combo.setCurrentIndex(dialog.wallet_combo.findData(euro))
+    assert "EUR" in dialog.total.text()
+    dialog.description.setText("Zakupy")
+    dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
+    dialog.table.cellWidget(0, dialog.PRICE).setText("3")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert get_transaction(db, dialog.transaction_id)["wallet_id"] == euro
+    assert get_wallet(db, euro)["balance_cents"] == -300
+
+
+def test_saved_transaction_makes_its_wallet_visible(db, errors, monkeypatch):
+    first = create_wallet(db, "A")
+    second = create_wallet(db, "B")
+    tab = WalletsTab(db)
+    _check_wallet(tab, 1, False)
+
+    def exec_saving(dialog):
+        dialog.wallet_combo.setCurrentIndex(dialog.wallet_combo.findData(second))
+        dialog.description.setText("Zakupy")
+        dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
+        dialog.table.cellWidget(0, dialog.PRICE).setText("3")
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(TransactionDialog, "exec", exec_saving)
+    tab.create_transaction()
+    assert tab.wallet_list.checked_ids() == {first, second}
+    assert tab.tree.topLevelItemCount() == 1
+
+
+def test_editing_uses_wallet_of_the_transaction_without_chooser(db, errors, monkeypatch):
+    first = create_wallet(db, "A", "PLN")
+    euro = create_wallet(db, "B", "EUR")
+    add(db, euro, on="2026-11-05")
+    seen = []
+
+    def exec_recording(dialog):
+        seen.append((dialog.wallet_combo, dialog.wallet["id"], dialog._currency()))
+        return 0
+
+    monkeypatch.setattr(TransactionDialog, "exec", exec_recording)
+    tab = WalletsTab(db)
+    assert tab.wallet_id() == first  # podświetlony inny portfel niż portfel rachunku
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0).child(0))
+    tab.edit_entry()
+    assert seen == [(None, euro, "EUR")]
 
 
 def test_expand_and_collapse_all(db, errors):
@@ -579,14 +768,14 @@ def test_products_tab_lists_products_by_day(db, errors):
     assert tab.tree.topLevelItemCount() == 1
     assert day.text(0) == "2026-11-05" and day.text(1) == "Produkty: 3"
     assert day.isExpanded()
-    assert day.text(7).replace("\xa0", " ") == "+7,00 PLN"
-    assert day.text(8).replace("\xa0", " ") == "−40,00 PLN"
+    assert day.text(8).replace("\xa0", " ") == "+7,00 PLN"
+    assert day.text(9).replace("\xa0", " ") == "−40,00 PLN"
     assert _product_names(tab) == ["Kaucja", "Mydło", "Żurek"]
 
     soap = next(day.child(i) for i in range(3) if day.child(i).text(1) == "Mydło")
-    assert [soap.text(c) for c in (2, 3, 4)] == ["Biedronka", "Dom", "2"]
-    assert soap.text(5) == "5,00"
-    assert soap.text(6).replace("\xa0", " ") == "−10,00 PLN"
+    assert [soap.text(c) for c in (2, 3, 4, 5)] == ["Biedronka", "A", "Dom", "2"]
+    assert soap.text(6) == "5,00"
+    assert soap.text(7).replace("\xa0", " ") == "−10,00 PLN"
 
 
 def test_products_tab_filters(db, errors):
@@ -636,7 +825,7 @@ def test_products_tab_edit_opens_transaction(db, errors, monkeypatch):
     tab.edit_button.click()
     assert len(opened) == 1
     assert tab.tree.topLevelItem(0).isExpanded()
-    assert tab.wallet_id() == wallet
+    assert tab.wallet_list.checked_ids() == {wallet}
     texts = [tab.tree.topLevelItem(0).child(i).text(2) for i in range(3)]
     assert "Zmieniony" in texts
 

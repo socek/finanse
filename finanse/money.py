@@ -47,6 +47,14 @@ def format_money(cents, currency=""):
     return f"{text}{NBSP}{currency}" if currency else text
 
 
+def format_totals(totals, sign=""):
+    """Kwoty w wielu walutach, np. "10,00 PLN, 5,00 EUR"; walut nigdy nie sumujemy."""
+    return ", ".join(
+        f"{sign}{format_money(cents, currency)}"
+        for currency, cents in sorted(totals.items())
+    )
+
+
 def format_money_input(cents):
     """Kwota do pola formularza, bez separatorów tysięcy."""
     sign = "-" if cents < 0 else ""

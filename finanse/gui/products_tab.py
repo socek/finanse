@@ -5,8 +5,6 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QPushButton,
     QSplitter,
@@ -17,12 +15,22 @@ from PySide6.QtWidgets import (
 
 from ..money import format_money, format_quantity
 from ..products import group_products_by_day, load_products
+from ..transactions import get_transaction
 from ..wallets import get_wallet, list_wallets
 from . import common
-from .day_list import KEY_ROLE, RIGHT, DayTree, FilterBar, summary_text
+from .day_list import (
+    KEY_ROLE,
+    RIGHT,
+    DayTree,
+    FilterBar,
+    WalletList,
+    selection_title,
+    summary_text,
+    wallet_panel,
+)
 from .dialogs import TransactionDialog
 
-NAME, TRANSACTION, CATEGORY, QUANTITY, PRICE, VALUE = range(1, 7)
+NAME, TRANSACTION, WALLET, CATEGORY, QUANTITY, PRICE, VALUE = range(1, 8)
 
 
 class ProductsTab(QWidget):
@@ -30,8 +38,8 @@ class ProductsTab(QWidget):
         super().__init__(parent)
         self.db = db
 
-        self.wallet_list = QListWidget()
-        self.wallet_list.currentItemChanged.connect(self._wallet_changed)
+        self.wallet_list = WalletList()
+        self.wallet_list.checked_changed.connect(self.refresh_products)
 
         self.title = common.plain_label()
         font = QFont(self.title.font())
@@ -48,7 +56,7 @@ class ProductsTab(QWidget):
         self.empty.hide()
 
         self.tree = DayTree(
-            ["Data", "Produkt", "Transakcja", "Kategoria", "Ilość", "Cena", "Wartość"],
+            ["Data", "Produkt", "Transakcja", "Portfel", "Kategoria", "Ilość", "Cena", "Wartość"],
             stretch_columns=(NAME, TRANSACTION),
         )
         self.tree.currentItemChanged.connect(self._update_buttons)
@@ -79,7 +87,7 @@ class ProductsTab(QWidget):
         right_layout.addLayout(actions)
 
         splitter = QSplitter()
-        splitter.addWidget(self.wallet_list)
+        splitter.addWidget(wallet_panel(self.wallet_list))
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -88,75 +96,50 @@ class ProductsTab(QWidget):
         layout.addWidget(splitter)
         self.refresh()
 
-    def wallet_id(self):
-        item = self.wallet_list.currentItem()
-        return item.data(KEY_ROLE) if item else None
-
     def refresh(self):
-        selected = self.wallet_id()
-        self.wallet_list.blockSignals(True)
-        self.wallet_list.clear()
-        current = None
-        for wallet in list_wallets(self.db):
-            item = QListWidgetItem(wallet["name"])
-            item.setData(KEY_ROLE, wallet["id"])
-            self.wallet_list.addItem(item)
-            if wallet["id"] == selected or current is None:
-                current = item
-        if current:
-            self.wallet_list.setCurrentItem(current)
-        self.wallet_list.blockSignals(False)
+        self.wallet_list.fill(list_wallets(self.db), lambda wallet: wallet["name"])
         self.filter_bar.refresh_categories()
         self.refresh_products()
 
-    def _wallet_changed(self, *_):
-        self.refresh_products()
-
-    def refresh_products(self):
-        wallet_id = self.wallet_id()
-        wallet = get_wallet(self.db, wallet_id) if wallet_id else None
-        if wallet is None:
-            self.title.setText("Dodaj pierwszy portfel")
-            self.tree.clear()
-            self.summary.hide()
-            self.empty.hide()
-            self._update_buttons()
-            return
-        self.title.setText(wallet["name"])
+    def refresh_products(self, *_):
+        wallet_ids = self.wallet_list.checked_ids()
+        self.title.setText(selection_title(list_wallets(self.db), wallet_ids))
+        self.tree.setColumnHidden(WALLET, len(wallet_ids) < 2)
 
         date_from, date_to, filters, notes = self.filter_bar.state()
-        products, summary = load_products(self.db, wallet_id, date_from, date_to, filters)
+        products, summary = load_products(self.db, wallet_ids, date_from, date_to, filters)
         filtered = bool(date_from or date_to or filters.active)
-        currency = wallet["currency"]
-        text = summary_text(notes, filtered, summary, currency)
+        text = summary_text(notes, filtered and bool(wallet_ids), summary)
         self.summary.setText(text)
         self.summary.setVisible(bool(text))
 
         self.tree.fill(
-            wallet_id,
+            tuple(sorted(wallet_ids)),
             group_products_by_day(products),
-            lambda day: [self._product_item(p, currency) for p in day["entries"]],
-            currency,
+            lambda day: [self._product_item(p) for p in day["entries"]],
             "Produkty",
             filters.active,
         )
-        self.empty.setText(
-            "Brak produktów spełniających wybrane filtry."
-            if filtered
-            else "Ten portfel nie ma jeszcze produktów."
-        )
-        self.empty.setVisible(not products)
+        if not wallet_ids:
+            has_wallets = self.wallet_list.count() > 0
+            self.empty.setText("Zaznacz co najmniej jeden portfel." if has_wallets else "")
+        elif filtered:
+            self.empty.setText("Brak produktów spełniających wybrane filtry.")
+        else:
+            self.empty.setText("Wybrane portfele nie mają jeszcze produktów.")
+        self.empty.setVisible(not products and bool(self.empty.text()))
         self._update_buttons()
 
     @staticmethod
-    def _product_item(product, currency):
+    def _product_item(product):
         income = product["kind"] == "income"
-        value = format_money(product["total_cents"], currency)
+        value = format_money(product["total_cents"], product["currency"])
         item = QTreeWidgetItem(
             [
                 "",
                 product["name"],
                 product["description"],
+                product["wallet_name"],
                 product["category_name"] or "Bez kategorii",
                 format_quantity(product["quantity_milli"]),
                 format_money(product["unit_price_cents"]),
@@ -195,6 +178,7 @@ class ProductsTab(QWidget):
         transaction_id = self.selected_transaction()
         if transaction_id is None:
             return
-        wallet = get_wallet(self.db, self.wallet_id())
+        wallet_id = get_transaction(self.db, transaction_id)["wallet_id"]
+        wallet = get_wallet(self.db, wallet_id)
         if TransactionDialog(self.db, wallet, transaction_id, parent=self).exec():
             self.refresh_products()

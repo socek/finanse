@@ -248,6 +248,19 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.description.setPlaceholderText("np. Zakupy spożywcze")
 
         top = QFormLayout()
+        # Portfel wybiera się tylko przy nowej transakcji; płatność ma go z szablonu.
+        self.wallet_combo = None
+        if transaction_id is None and initial is None:
+            self.wallet_combo = QComboBox()
+            self.currencies = {}
+            for item in list_wallets(db):
+                self.wallet_combo.addItem(item["name"], item["id"])
+                self.currencies[item["id"]] = item["currency"]
+            if wallet is not None:
+                self.wallet_combo.setCurrentIndex(
+                    max(self.wallet_combo.findData(wallet["id"]), 0)
+                )
+            top.addRow("Portfel", self.wallet_combo)
         top.addRow("Rodzaj", self.kind)
         top.addRow("Data", self.occurred_on)
         top.addRow("Opis", self.description)
@@ -260,9 +273,18 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         layout.addLayout(bottom)
         layout.addWidget(_buttons(self, self.ACCEPT_TEXT))
         self.resize(760, 480)
+        if self.wallet_combo is not None:
+            self.wallet_combo.currentIndexChanged.connect(self._update_totals)
         self._update_totals()
 
+    def selected_wallet_id(self):
+        if self.wallet_combo is not None:
+            return self.wallet_combo.currentData()
+        return self.wallet["id"]
+
     def _currency(self):
+        if self.wallet_combo is not None:
+            return self.currencies.get(self.wallet_combo.currentData(), "")
         return self.wallet["currency"]
 
     def values(self):
@@ -276,7 +298,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
     def save(self):
         if self.transaction_id is None:
             self.transaction_id = create_transaction(
-                self.db, self.wallet["id"], *self.values()
+                self.db, self.selected_wallet_id(), *self.values()
             )
         else:
             update_transaction(self.db, self.transaction_id, *self.values())

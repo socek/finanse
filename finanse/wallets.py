@@ -47,11 +47,17 @@ class EntryFilters:
         return self != EntryFilters()
 
 
-def _entry_amount(entry, wallet_id):
+def add_to_totals(totals, currency, cents):
+    """Dolicza kwotę do sumy danej waluty; zero nie tworzy wpisu."""
+    if cents:
+        totals[currency] = totals.get(currency, 0) + cents
+
+
+def _entry_amount(entry, wallet_ids):
     item = entry["item"]
     if entry["type"] == "transaction":
         return item["total_cents"]
-    if item["from_wallet_id"] == wallet_id:
+    if item["from_wallet_id"] in wallet_ids:
         return item["amount_from_cents"]
     return item["amount_to_cents"]
 
@@ -63,8 +69,8 @@ def _entry_names(entry):
     return [item["description"], item["from_name"], item["to_name"]]
 
 
-def _matches(entry, wallet_id, filters):
-    amount = _entry_amount(entry, wallet_id)
+def _matches(entry, wallet_ids, filters):
+    amount = _entry_amount(entry, wallet_ids)
     if filters.min_cents is not None and amount < filters.min_cents:
         return False
     if filters.max_cents is not None and amount > filters.max_cents:
@@ -147,8 +153,14 @@ def delete_wallet(db, wallet_id):
         db.execute("DELETE FROM wallets WHERE id = ?", (wallet_id,))
 
 
-def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()):
-    """Pasujące transakcje i przelewy portfela z okresu, od najnowszych, z sumami."""
+def load_entries(db, wallet_ids, date_from="", date_to="", filters=EntryFilters()):
+    """Pasujące transakcje i przelewy portfeli z okresu, od najnowszych, z sumami.
+
+    Sumy są osobne dla każdej waluty. Przelew między wybranymi portfelami pojawia się
+    raz i nie liczy się do sum.
+    """
+    wallet_ids = set(wallet_ids)
+    marks = ",".join("?" * len(wallet_ids))
     period = ""
     period_args = []
     if date_from:
@@ -160,13 +172,15 @@ def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()
 
     transactions = db.execute(
         f"""
-        SELECT t.*, COALESCE(SUM(p.total_cents), 0) AS total_cents
+        SELECT t.*, COALESCE(SUM(p.total_cents), 0) AS total_cents,
+               w.name AS wallet_name, w.currency
         FROM transactions t
+        JOIN wallets w ON w.id = t.wallet_id
         LEFT JOIN products p ON p.transaction_id = t.id
-        WHERE t.wallet_id = ? {period.format(column="t.occurred_on")}
+        WHERE t.wallet_id IN ({marks}) {period.format(column="t.occurred_on")}
         GROUP BY t.id
         """,
-        (wallet_id, *period_args),
+        (*wallet_ids, *period_args),
     ).fetchall()
 
     products = defaultdict(list)
@@ -176,10 +190,10 @@ def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()
         FROM products p
         JOIN transactions t ON t.id = p.transaction_id
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE t.wallet_id = ? {period.format(column="t.occurred_on")}
+        WHERE t.wallet_id IN ({marks}) {period.format(column="t.occurred_on")}
         ORDER BY p.position
         """,
-        (wallet_id, *period_args),
+        (*wallet_ids, *period_args),
     ):
         products[product["transaction_id"]].append(product)
 
@@ -191,10 +205,10 @@ def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()
         FROM transfers tr
         JOIN wallets wf ON wf.id = tr.from_wallet_id
         JOIN wallets wt ON wt.id = tr.to_wallet_id
-        WHERE (tr.from_wallet_id = ? OR tr.to_wallet_id = ?)
+        WHERE (tr.from_wallet_id IN ({marks}) OR tr.to_wallet_id IN ({marks}))
               {period.format(column="tr.occurred_on")}
         """,
-        (wallet_id, wallet_id, *period_args),
+        (*wallet_ids, *wallet_ids, *period_args),
     ).fetchall()
 
     entries = [
@@ -209,15 +223,12 @@ def load_entries(db, wallet_id, date_from="", date_to="", filters=EntryFilters()
         ),
         reverse=True,
     )
-    entries = [entry for entry in entries if _matches(entry, wallet_id, filters)]
-    summary = {
-        kind: sum(
-            entry["item"]["total_cents"]
-            for entry in entries
-            if entry["type"] == "transaction" and entry["item"]["kind"] == kind
-        )
-        for kind in ("income", "expense")
-    }
+    entries = [entry for entry in entries if _matches(entry, wallet_ids, filters)]
+    summary = {"income": {}, "expense": {}}
+    for entry in entries:
+        if entry["type"] == "transaction":
+            item = entry["item"]
+            add_to_totals(summary[item["kind"]], item["currency"], item["total_cents"])
     return entries, summary
 
 
@@ -231,10 +242,10 @@ def group_by_day(entries):
         item = entry["item"]
         if not days or days[-1]["date"] != item["occurred_on"]:
             days.append(
-                {"date": item["occurred_on"], "entries": [], "income": 0, "expense": 0}
+                {"date": item["occurred_on"], "entries": [], "income": {}, "expense": {}}
             )
         day = days[-1]
         day["entries"].append(entry)
         if entry["type"] == "transaction":
-            day[item["kind"]] += item["total_cents"]
+            add_to_totals(day[item["kind"]], item["currency"], item["total_cents"])
     return days
