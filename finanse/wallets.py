@@ -232,6 +232,16 @@ def load_entries(db, wallet_ids, date_from="", date_to="", filters=EntryFilters(
     return entries, summary
 
 
+def last_transaction_date(db, wallet_ids):
+    """Najpóźniejsza data transakcji w portfelach, bez względu na filtry listy."""
+    wallet_ids = list(wallet_ids)
+    marks = ",".join("?" * len(wallet_ids))
+    return db.execute(
+        f"SELECT MAX(occurred_on) FROM transactions WHERE wallet_id IN ({marks})",
+        wallet_ids,
+    ).fetchone()[0]
+
+
 def group_by_day(entries):
     """Grupuje posortowane operacje po dniu i sumuje przychody oraz wydatki.
 

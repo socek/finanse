@@ -23,6 +23,7 @@ from finanse.wallets import (
     delete_wallet,
     get_wallet,
     group_by_day,
+    last_transaction_date,
     list_wallets,
     load_entries,
     update_wallet,
@@ -314,6 +315,20 @@ def test_transfer_amount_filter_uses_selected_side(db):
     big = EntryFilters(min_cents=20000)
     assert len(load_entries(db, [source], filters=big)[0]) == 1
     assert load_entries(db, [target], filters=big)[0] == []
+
+
+def test_last_transaction_date(db):
+    first = create_wallet(db, "A")
+    second = create_wallet(db, "B")
+    empty = create_wallet(db, "C")
+    add(db, first, ("X", "1", "1"), on="2026-10-01")
+    add(db, first, ("X", "1", "1"), on="2026-09-01")
+    add(db, second, ("Y", "1", "1"), on="2026-11-05")
+    create_transfer(db, first, second, "2026-12-24", "", "1")  # przelew się nie liczy
+    assert last_transaction_date(db, [first]) == "2026-10-01"
+    assert last_transaction_date(db, [first, second]) == "2026-11-05"
+    assert last_transaction_date(db, [empty]) is None
+    assert last_transaction_date(db, []) is None
 
 
 def test_transfer_moves_money(db):

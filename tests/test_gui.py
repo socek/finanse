@@ -382,6 +382,38 @@ def test_editing_uses_wallet_of_the_transaction_without_chooser(db, errors, monk
     assert seen == [(None, euro, "EUR")]
 
 
+@pytest.mark.parametrize("tab_class", [WalletsTab, ProductsTab])
+def test_last_transaction_follows_selected_wallets(db, errors, tab_class):
+    first = create_wallet(db, "A")
+    create_wallet(db, "B")
+    create_wallet(db, "C")
+    add(db, first, on="2026-10-01")
+    add(db, db.execute("SELECT id FROM wallets WHERE name = 'B'").fetchone()[0], on="2026-11-05")
+    tab = tab_class(db)
+    assert tab.last_transaction.text() == "Najnowsza transakcja: 2026-11-05"
+
+    _check_wallet(tab, 1, False)
+    assert tab.last_transaction.text() == "Najnowsza transakcja: 2026-10-01"
+    # Filtry listy nie zmieniają tej informacji.
+    tab.filter_bar.search.setText("nie ma takiego")
+    assert tab.last_transaction.text() == "Najnowsza transakcja: 2026-10-01"
+    tab.filter_bar.clear()
+
+    tab.wallet_list.set_all_checked(False)
+    assert tab.last_transaction.text() == ""
+    _check_wallet(tab, 2, True)
+    assert tab.last_transaction.text() == "Brak transakcji"
+
+
+def test_last_transaction_updates_after_change(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-10-01")
+    tab = WalletsTab(db)
+    add(db, wallet, on="2026-11-01")
+    tab.refresh()
+    assert tab.last_transaction.text() == "Najnowsza transakcja: 2026-11-01"
+
+
 def test_expand_and_collapse_all(db, errors):
     wallet = create_wallet(db, "A")
     add(db, wallet, on="2026-11-05")

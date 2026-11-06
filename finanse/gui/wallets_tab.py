@@ -33,8 +33,10 @@ from .day_list import (
     DayTree,
     FilterBar,
     WalletList,
+    last_transaction_text,
     selection_title,
     summary_text,
+    title_row,
     wallet_panel,
 )
 from .dialogs import TransactionDialog, TransferDialog, WalletDialog
@@ -62,6 +64,7 @@ class WalletsTab(QWidget):
         title_font.setPointSizeF(title_font.pointSizeF() * 1.5)
         title_font.setBold(True)
         self.title.setFont(title_font)
+        self.last_transaction = QLabel()
         self.balance = QLabel()
         balance_font = QFont(self.balance.font())
         balance_font.setPointSizeF(balance_font.pointSizeF() * 1.2)
@@ -119,7 +122,7 @@ class WalletsTab(QWidget):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self.title)
+        right_layout.addLayout(title_row(self.title, self.last_transaction))
         right_layout.addWidget(self.balance)
         right_layout.addLayout(actions)
         right_layout.addWidget(self.filter_bar)
@@ -166,6 +169,7 @@ class WalletsTab(QWidget):
         for button in self.wallet_actions:
             button.setEnabled(bool(wallets))
         self.title.setText(selection_title(wallets, checked))
+        self.last_transaction.setText(last_transaction_text(self.db, checked))
         totals = {}
         for wallet in wallets:
             if wallet["id"] in checked:

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from ..categories import list_categories
 from ..money import format_totals, parse_money
-from ..wallets import NO_CATEGORY, EntryFilters
+from ..wallets import NO_CATEGORY, EntryFilters, last_transaction_date
 from . import common
 
 KEY_ROLE = Qt.ItemDataRole.UserRole
@@ -232,6 +232,23 @@ def selection_title(wallets, checked):
     if len(selected) == 1:
         return selected[0]["name"]
     return f"Wybrane portfele: {len(selected)}"
+
+
+def title_row(title, last_transaction):
+    """Nagłówek listy, a na prawo od niego data ostatniej transakcji."""
+    row = QHBoxLayout()
+    row.addWidget(title, 0, Qt.AlignmentFlag.AlignBaseline)
+    row.addSpacing(16)
+    row.addWidget(last_transaction, 0, Qt.AlignmentFlag.AlignBaseline)
+    row.addStretch()
+    return row
+
+
+def last_transaction_text(db, wallet_ids):
+    if not wallet_ids:
+        return ""
+    date = last_transaction_date(db, wallet_ids)
+    return f"Najnowsza transakcja: {date}" if date else "Brak transakcji"
 
 
 class DayTree(QTreeWidget):

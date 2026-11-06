@@ -24,8 +24,10 @@ from .day_list import (
     DayTree,
     FilterBar,
     WalletList,
+    last_transaction_text,
     selection_title,
     summary_text,
+    title_row,
     wallet_panel,
 )
 from .dialogs import TransactionDialog
@@ -46,6 +48,8 @@ class ProductsTab(QWidget):
         font.setPointSizeF(font.pointSizeF() * 1.5)
         font.setBold(True)
         self.title.setFont(font)
+
+        self.last_transaction = QLabel()
 
         self.filter_bar = FilterBar(db)
         self.filter_bar.changed.connect(self.refresh_products)
@@ -79,7 +83,7 @@ class ProductsTab(QWidget):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self.title)
+        right_layout.addLayout(title_row(self.title, self.last_transaction))
         right_layout.addWidget(self.filter_bar)
         right_layout.addWidget(self.summary)
         right_layout.addWidget(self.empty)
@@ -104,6 +108,7 @@ class ProductsTab(QWidget):
     def refresh_products(self, *_):
         wallet_ids = self.wallet_list.checked_ids()
         self.title.setText(selection_title(list_wallets(self.db), wallet_ids))
+        self.last_transaction.setText(last_transaction_text(self.db, wallet_ids))
         self.tree.setColumnHidden(WALLET, len(wallet_ids) < 2)
 
         date_from, date_to, filters, notes = self.filter_bar.state()
