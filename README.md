@@ -27,14 +27,14 @@ python -m venv .venv
 .venv/bin/python -m finanse
 ```
 
-Baza powstaje przy pierwszym uruchomieniu jako `instance/finanse.db`. Inną bazę
+Baza powstaje przy pierwszym uruchomieniu jako `~/.finanse/finanse.db`. Inną bazę
 można wskazać argumentem: `.venv/bin/python -m finanse /sciezka/do/bazy.db`.
 
 ## Aktualizacja bazy
 
 Zmiany schematu są w `finanse/migrations/NNN_nazwa.sql` i wykonują się same przy
 starcie aplikacji. Przed migracją istniejącej bazy aplikacja zapisuje jej kopię
-jako `instance/finanse.db.backup-vN`, gdzie `N` to wersja sprzed migracji.
+jako `~/.finanse/finanse.db.backup-vN`, gdzie `N` to wersja sprzed migracji.
 
 Migracja 3 usuwa konta. Baza z więcej niż jednym kontem nie zostanie zmigrowana,
 bo ich danych nie da się bezpiecznie scalić: aplikacja pokaże błąd i nic nie zmieni.
@@ -48,9 +48,9 @@ wartościami, także zmiany wykonane poza aplikacją, np. w konsoli `sqlite3`. Z
 również usunięte dane. Nie ma jeszcze przycisku cofania zmian. Nowa kolumna lub tabela
 wymaga przebudowy triggerów w migracji.
 
-Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `instance/backups/`
+Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `~/.finanse/backups/`
 i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
-`instance/finanse.db`.
+`~/.finanse/finanse.db`.
 
 Zakładka **Pliki** pokazuje pliki z katalogu bazy i podkatalogu `backups`, ich rozmiar
 oraz sumy dla każdej grupy i całości.

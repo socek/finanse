@@ -10,7 +10,10 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from .db import backup_on_startup, connect, init_db
 from .gui.main_window import MainWindow
 
-DEFAULT_DATABASE = Path(__file__).resolve().parent.parent / "instance" / "finanse.db"
+
+def default_database():
+    """Baza w osobnym katalogu, bo obok niej powstają kopie."""
+    return Path.home() / ".finanse" / "finanse.db"
 
 
 def main(argv=None):
@@ -25,9 +28,10 @@ def main(argv=None):
     ):
         app.installTranslator(translator)
 
-    path = Path(argv[1]) if len(argv) > 1 else DEFAULT_DATABASE
+    path = Path(argv[1]) if len(argv) > 1 else default_database()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        # Tryb 700 dotyczy tylko nowego katalogu: dane nie są szyfrowane.
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     except OSError as error:
         QMessageBox.critical(
             None, "Finanse", f"Nie udało się otworzyć bazy {path}:\n{error}"

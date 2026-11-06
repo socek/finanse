@@ -1,3 +1,4 @@
+from finanse.__main__ import default_database
 from finanse.db import backup_on_startup, connect, init_db
 from finanse.wallets import create_wallet
 
@@ -27,3 +28,8 @@ def test_backup_on_startup_copies_database_and_prunes_only_its_files(tmp_path):
     assert names == sorted(["finanse-20260104-120000.db", target.name, "moja-kopia.db"])
     assert foreign.read_text() == "nie ruszać"
     assert not list(directory.glob("*.tmp"))
+
+
+def test_default_database_is_in_home_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert default_database() == tmp_path / ".finanse" / "finanse.db"
