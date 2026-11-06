@@ -16,6 +16,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
   portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
+- automatyczna kopia bazy przy każdym uruchomieniu
 
 ## Uruchomienie
 
@@ -37,6 +38,12 @@ jako `instance/finanse.db.backup-vN`, gdzie `N` to wersja sprzed migracji.
 Migracja 3 usuwa konta. Baza z więcej niż jednym kontem nie zostanie zmigrowana,
 bo ich danych nie da się bezpiecznie scalić: aplikacja pokaże błąd i nic nie zmieni.
 Kopie sprzed tej migracji nadal zawierają tabelę `users` z hashami haseł.
+
+## Kopie
+
+Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `instance/backups/`
+i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
+`instance/finanse.db`.
 
 ## Import z banku
 

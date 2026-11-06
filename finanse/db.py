@@ -1,6 +1,12 @@
+import os
+import re
 import sqlite3
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
+
+STARTUP_BACKUPS_KEPT = 30
+_STARTUP_BACKUP_NAME = re.compile(r"finanse-[0-9]{8}-[0-9]{6}\.db")
 
 
 def connect(path):
@@ -57,3 +63,36 @@ def init_db(path):
                 raise
     finally:
         connection.close()
+
+
+def backup_on_startup(path, keep=STARTUP_BACKUPS_KEPT):
+    """Kopia całej bazy w katalogu backups obok niej; zostawia `keep` najnowszych.
+
+    Zwraca ścieżkę kopii albo None, gdy bazy jeszcze nie ma.
+    """
+    path = Path(path).resolve()
+    if not path.exists():
+        return None
+    directory = path.parent / "backups"
+    directory.mkdir(exist_ok=True)
+    target = directory / f"finanse-{datetime.now():%Y%m%d-%H%M%S}.db"
+    temporary = target.with_suffix(".tmp")
+    source = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    try:
+        # Kopia pojawia się pod właściwą nazwą dopiero, gdy jest kompletna.
+        copy = sqlite3.connect(temporary)
+        try:
+            source.backup(copy)
+        finally:
+            copy.close()
+        os.replace(temporary, target)
+    finally:
+        source.close()
+        temporary.unlink(missing_ok=True)
+
+    backups = sorted(
+        file for file in directory.iterdir() if _STARTUP_BACKUP_NAME.fullmatch(file.name)
+    )
+    for old in backups[:-keep]:
+        old.unlink()
+    return target
