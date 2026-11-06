@@ -1431,6 +1431,52 @@ def test_filter_marks_no_category_item_but_keeps_all_categories_plain(db, errors
     assert combo.itemData(0, Qt.ItemDataRole.BackgroundRole) is None
 
 
+def _fill_new_transaction(dialog):
+    dialog.description.setText("Skrót")
+    dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
+    dialog.table.cellWidget(0, dialog.PRICE).setText("3")
+    dialog.accept()
+    return dialog.result()
+
+
+def test_ctrl_n_opens_new_transaction_from_any_tab(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    monkeypatch.setattr(TransactionDialog, "exec", _fill_new_transaction)
+    window = MainWindow(db)
+    assert window.new_transaction_shortcut.key().toString() == "Ctrl+N"
+
+    window.tabs.setCurrentWidget(window.products)
+    window.new_transaction_shortcut.activated.emit()
+    assert get_wallet(db, wallet)["balance_cents"] == -300
+    # Widoczna zakładka i lista transakcji od razu pokazują nowy wpis.
+    assert window.products.tree.topLevelItemCount() == 1
+    assert window.wallets.tree.topLevelItem(0).child(0).text(1) == "Skrót"
+    assert window.tabs.currentWidget() is window.products
+
+
+def test_ctrl_n_real_key_press_opens_dialog(db, errors, monkeypatch):
+    create_wallet(db, "A")
+    opened = []
+    monkeypatch.setattr(TransactionDialog, "exec", lambda d: opened.append(d) or 0)
+    window = MainWindow(db)
+    window.show()
+    assert QTest.qWaitForWindowActive(window)
+    QTest.keyClick(window.wallets.tree, Qt.Key.Key_N, Qt.KeyboardModifier.ControlModifier)
+    assert len(opened) == 1
+    assert opened[0].wallet_combo is not None
+    window.close()
+
+
+def test_ctrl_n_without_wallets_reports_it(db, errors):
+    window = MainWindow(db)
+    window.new_transaction()
+    assert "Dodaj najpierw portfel" in errors[0]
+
+
+def test_new_transaction_button_shows_shortcut(db, errors):
+    assert "Ctrl+N" in WalletsTab(db).new_transaction_button.text()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:

@@ -10,7 +10,7 @@ Pierwsza wersja aplikacji okienkowej.
 - Transakcje z wieloma produktami, także z kategoriami przypisanymi do produktów.
 - Wpisywanie ilości i ceny albo ilości i wartości, z wyliczaniem brakującego pola.
 - Propozycja opisu z nazwy jedynego produktu.
-- Enter dodaje produkt, a Shift+Enter zapisuje transakcję.
+- Ctrl+N otwiera nową transakcję, Enter dodaje produkt, a Shift+Enter zapisuje całość.
 - Przelewy między portfelami, także w różnych walutach.
 - Transakcje cykliczne z opcjonalnymi produktami i licznikiem płatności.
 - Import wyciągów bankowych z plików CSV z ochroną przed duplikatami.

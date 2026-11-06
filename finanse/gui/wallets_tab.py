@@ -70,7 +70,7 @@ class WalletsTab(QWidget):
         balance_font.setPointSizeF(balance_font.pointSizeF() * 1.2)
         self.balance.setFont(balance_font)
 
-        self.new_transaction_button = QPushButton("Nowa transakcja")
+        self.new_transaction_button = QPushButton("Nowa transakcja (Ctrl+N)")
         self.new_transaction_button.clicked.connect(self.create_transaction)
         self.transfer_button = QPushButton("Przelew")
         self.transfer_button.clicked.connect(self.create_transfer)
@@ -354,6 +354,9 @@ class WalletsTab(QWidget):
         self.refresh(select=-1)
 
     def create_transaction(self):
+        if self.wallet_id() is None:
+            common.show_errors(self, ["Dodaj najpierw portfel."])
+            return
         wallet = get_wallet(self.db, self.wallet_id())
         dialog = TransactionDialog(self.db, wallet, parent=self)
         if dialog.exec():

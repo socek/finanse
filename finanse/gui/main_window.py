@@ -1,3 +1,4 @@
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from .about_tab import AboutTab
@@ -37,3 +38,11 @@ class MainWindow(QMainWindow):
         # Każda zakładka czyta z bazy przy wejściu, więc widzi zmiany z pozostałych.
         self.tabs.currentChanged.connect(lambda _: self.tabs.currentWidget().refresh())
         self.setCentralWidget(self.tabs)
+
+        self.new_transaction_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        self.new_transaction_shortcut.activated.connect(self.new_transaction)
+
+    def new_transaction(self):
+        """Działa z każdej zakładki, a po zapisie odświeża tę, która jest widoczna."""
+        self.wallets.create_transaction()
+        self.tabs.currentWidget().refresh()
