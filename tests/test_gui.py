@@ -5,12 +5,20 @@ from test_csv_import import BANK_CSV
 
 from finanse.gui import common
 from finanse.gui.categories_tab import CategoriesTab
-from finanse.gui.dialogs import TransactionDialog, TransferDialog, WalletDialog
+from finanse.gui.dialogs import (
+    PaymentDialog,
+    RecurringDialog,
+    TransactionDialog,
+    TransferDialog,
+    WalletDialog,
+)
 from finanse.gui.import_dialog import ImportDialog
 from finanse.gui.main_window import MainWindow
 from finanse.gui.products_tab import ProductsTab
+from finanse.gui.recurring_tab import AMOUNT, PAY, REMAINING, RecurringTab
 from finanse.gui.reports_tab import ReportsTab
 from finanse.gui.wallets_tab import WalletsTab
+from finanse.recurring import create_recurring, get_recurring
 from finanse.transactions import create_transaction, get_transaction
 from finanse.transfers import create_transfer
 from finanse.wallets import create_wallet, get_wallet, list_wallets
@@ -641,9 +649,119 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 4
+    assert window.tabs.count() == 5
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None
     window.tabs.setCurrentWidget(window.wallets)
     assert window.wallets.wallet_list.count() == 1
+
+
+def _accept_on_exec(monkeypatch, dialog_class, before=None):
+    def fake_exec(dialog):
+        if before:
+            before(dialog)
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(dialog_class, "exec", fake_exec)
+
+
+def test_recurring_dialog_without_and_with_products(db, errors):
+    wallet = create_wallet(db, "A")
+    dialog = RecurringDialog(db)
+    dialog.accept()
+    assert any("Podaj opis" in error for error in errors)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+
+    dialog.description.setText("Czynsz")
+    dialog.amount.setText("500")
+    dialog.remaining.setText("3")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    saved = get_recurring(db, dialog.recurring_id)
+    assert (saved["wallet_id"], saved["amount_cents"], saved["remaining"]) == (wallet, 50000, 3)
+    assert saved["rows"] == []
+
+    dialog = RecurringDialog(db, dialog.recurring_id)
+    assert dialog.amount.isEnabled() and dialog.remaining.text() == "3"
+    dialog.table.cellWidget(0, dialog.NAME).setText("Woda")
+    dialog.table.cellWidget(0, dialog.PRICE).setText("70")
+    assert not dialog.amount.isEnabled() and not dialog.category.isEnabled()
+    dialog.accept()
+    saved = get_recurring(db, dialog.recurring_id)
+    assert saved["amount_cents"] is None
+    assert [row["name"] for row in saved["rows"]] == ["Woda"]
+
+
+def test_pay_button_moves_recurring_to_transactions_and_counts_down(
+    db, errors, monkeypatch
+):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="2")
+    _accept_on_exec(monkeypatch, PaymentDialog)
+    tab = RecurringTab(db)
+    assert tab.table.item(0, REMAINING).text() == "2"
+
+    tab.table.cellWidget(0, PAY).click()
+    assert tab.table.item(0, REMAINING).text() == "1"
+    assert get_wallet(db, wallet)["balance_cents"] == 9000
+    tab.table.cellWidget(0, PAY).click()
+    assert tab.table.item(0, REMAINING).text() == "0 (zakończona)"
+    assert get_wallet(db, wallet)["balance_cents"] == 8000
+    assert not tab.table.cellWidget(0, PAY).isEnabled()
+
+    wallets = WalletsTab(db)
+    assert wallets.tree.topLevelItem(0).child(0).text(1) == "Czynsz"
+
+
+def test_cancelled_payment_changes_nothing(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="2")
+    monkeypatch.setattr(PaymentDialog, "exec", lambda _dialog: 0)
+    tab = RecurringTab(db)
+    tab.table.cellWidget(0, PAY).click()
+    assert tab.table.item(0, REMAINING).text() == "2"
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+
+def test_payment_dialog_is_prefilled_and_requires_unknown_amount(db, errors):
+    wallet = create_wallet(db, "A")
+    unknown = create_recurring(db, wallet, "income", "Prąd")
+    dialog = PaymentDialog(db, get_wallet(db, wallet), unknown)
+    assert dialog.kind.currentData() == "income"
+    assert dialog.table.cellWidget(0, dialog.NAME).text() == "Prąd"
+    assert dialog.table.cellWidget(0, dialog.PRICE).text() == ""
+    dialog.accept()
+    assert any("niepoprawna cena" in error for error in errors)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+
+    dialog.table.cellWidget(0, dialog.PRICE).setText("321,50")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert get_wallet(db, wallet)["balance_cents"] == 32150
+
+
+def test_recurring_tab_shows_amounts_and_deletes(db, errors):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Bez kwoty")
+    create_recurring(
+        db, wallet, "income", "Z produktami",
+        rows=[{"name": "X", "quantity": "2", "price": "5", "category": None}],
+    )  # fmt: skip
+    tab = RecurringTab(db)
+    assert tab.table.item(0, AMOUNT).text() == "ustalana przy płatności"
+    assert tab.table.item(1, AMOUNT).text().replace("\xa0", " ") == "+10,00 PLN"
+    assert tab.table.item(1, REMAINING).text() == "bez limitu"
+    assert not tab.delete_button.isEnabled()
+
+    tab.table.setCurrentCell(0, 0)
+    assert tab.delete_button.isEnabled()
+    tab.delete()
+    assert tab.table.rowCount() == 1
+    assert tab.table.item(0, 0).text() == "Z produktami"
+
+
+def test_new_recurring_requires_a_wallet(db, errors):
+    RecurringTab(db).create()
+    assert "Dodaj najpierw portfel" in errors[0]

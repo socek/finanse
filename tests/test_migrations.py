@@ -53,7 +53,7 @@ def test_migration_removes_accounts_and_keeps_data(tmp_path):
     db = connect(path)
     tables = {row["name"] for row in db.execute("SELECT name FROM sqlite_master")}
     assert "users" not in tables
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert db.execute("PRAGMA user_version").fetchone()[0] >= 3
     columns = {row["name"] for row in db.execute("PRAGMA table_info(wallets)")}
     assert "user_id" not in columns
     assert db.execute(

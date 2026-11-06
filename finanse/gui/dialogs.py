@@ -27,6 +27,13 @@ from ..money import (
     parse_money,
     parse_quantity,
 )
+from ..recurring import (
+    create_recurring,
+    get_recurring,
+    pay_recurring,
+    payment_draft,
+    update_recurring,
+)
 from ..transactions import (
     EMPTY_ROW,
     create_transaction,
@@ -97,37 +104,14 @@ class WalletDialog(_SavingDialog):
             update_wallet(self.db, self.wallet_id, *values)
 
 
-class TransactionDialog(_SavingDialog):
+class _ProductRowsMixin:
+    """Tabela produktów z sumą, wspólna dla transakcji i transakcji cyklicznych."""
+
     NAME, CATEGORY, QUANTITY, PRICE, VALUE, REMOVE = range(6)
 
-    def __init__(self, db, wallet, transaction_id=None, parent=None):
-        super().__init__(parent)
-        self.db = db
-        self.wallet = wallet
-        self.transaction_id = transaction_id
-        self.categories = list_categories(db)
-        self.setWindowTitle("Edycja transakcji" if transaction_id else "Nowa transakcja")
-
-        data = (
-            get_transaction(db, transaction_id)
-            if transaction_id
-            else {"kind": "expense", "occurred_on": None, "description": "", "rows": []}
-        )
-
-        self.kind = QComboBox()
-        self.kind.addItem("Wydatek", "expense")
-        self.kind.addItem("Przychód", "income")
-        self.kind.setCurrentIndex(self.kind.findData(data["kind"]))
-        self.occurred_on = common.date_edit(data["occurred_on"])
-        self.description = QLineEdit(data["description"])
-        self.description.setMaxLength(200)
-        self.description.setPlaceholderText("np. Zakupy spożywcze")
-
-        top = QFormLayout()
-        top.addRow("Rodzaj", self.kind)
-        top.addRow("Data", self.occurred_on)
-        top.addRow("Opis", self.description)
-
+    def _product_section(self, rows, categories):
+        self.categories = categories
+        self.total = QLabel()
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             ["Produkt", "Kategoria", "Ilość", "Cena", "Wartość", ""]
@@ -145,25 +129,16 @@ class TransactionDialog(_SavingDialog):
         ):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(column, width)
-
-        for row in data["rows"] or [EMPTY_ROW]:
+        for row in rows or [EMPTY_ROW]:
             self._add_row(row)
 
         add = QPushButton("Dodaj produkt")
         add.clicked.connect(lambda: self._add_row(EMPTY_ROW, focus=True))
-        self.total = QLabel()
         bottom = QHBoxLayout()
         bottom.addWidget(add)
         bottom.addStretch()
         bottom.addWidget(self.total)
-
-        layout = QVBoxLayout(self)
-        layout.addLayout(top)
-        layout.addWidget(self.table, 1)
-        layout.addLayout(bottom)
-        layout.addWidget(_buttons(self))
-        self.resize(760, 480)
-        self._update_totals()
+        return bottom
 
     def _add_row(self, row, focus=False):
         index = self.table.rowCount()
@@ -181,6 +156,7 @@ class TransactionDialog(_SavingDialog):
         remove = QToolButton()
         remove.setText("Usuń")
         remove.clicked.connect(lambda: self._remove_row(remove))
+        name.textChanged.connect(self._update_totals)
         quantity.textChanged.connect(self._update_totals)
         price.textChanged.connect(self._update_totals)
 
@@ -227,7 +203,7 @@ class TransactionDialog(_SavingDialog):
             )
             total += cents
             self.table.item(index, self.VALUE).setText(format_money(cents))
-        self.total.setText(f"Suma: {format_money(total, self.wallet['currency'])}")
+        self.total.setText(f"Suma: {format_money(total, self._currency())}")
 
     def rows(self):
         return [
@@ -240,17 +216,186 @@ class TransactionDialog(_SavingDialog):
             for index in range(self.table.rowCount())
         ]
 
-    def save(self):
-        values = (
+
+def _kind_combo(selected):
+    combo = QComboBox()
+    combo.addItem("Wydatek", "expense")
+    combo.addItem("Przychód", "income")
+    combo.setCurrentIndex(combo.findData(selected))
+    return combo
+
+
+class TransactionDialog(_ProductRowsMixin, _SavingDialog):
+    ACCEPT_TEXT = "Zapisz"
+
+    def __init__(self, db, wallet, transaction_id=None, parent=None, initial=None):
+        super().__init__(parent)
+        self.db = db
+        self.wallet = wallet
+        self.transaction_id = transaction_id
+        self.setWindowTitle("Edycja transakcji" if transaction_id else "Nowa transakcja")
+
+        data = initial or (
+            get_transaction(db, transaction_id)
+            if transaction_id
+            else {"kind": "expense", "occurred_on": None, "description": "", "rows": []}
+        )
+
+        self.kind = _kind_combo(data["kind"])
+        self.occurred_on = common.date_edit(data["occurred_on"])
+        self.description = QLineEdit(data["description"])
+        self.description.setMaxLength(200)
+        self.description.setPlaceholderText("np. Zakupy spożywcze")
+
+        top = QFormLayout()
+        top.addRow("Rodzaj", self.kind)
+        top.addRow("Data", self.occurred_on)
+        top.addRow("Opis", self.description)
+
+        bottom = self._product_section(data["rows"], list_categories(db))
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addWidget(self.table, 1)
+        layout.addLayout(bottom)
+        layout.addWidget(_buttons(self, self.ACCEPT_TEXT))
+        self.resize(760, 480)
+        self._update_totals()
+
+    def _currency(self):
+        return self.wallet["currency"]
+
+    def values(self):
+        return (
             self.kind.currentData(),
             common.iso_date(self.occurred_on),
             self.description.text(),
             self.rows(),
         )
+
+    def save(self):
         if self.transaction_id is None:
-            self.transaction_id = create_transaction(self.db, self.wallet["id"], *values)
+            self.transaction_id = create_transaction(
+                self.db, self.wallet["id"], *self.values()
+            )
         else:
-            update_transaction(self.db, self.transaction_id, *values)
+            update_transaction(self.db, self.transaction_id, *self.values())
+
+
+class PaymentDialog(TransactionDialog):
+    """Zwykła transakcja wypełniona z szablonu; zapis zmniejsza też licznik."""
+
+    ACCEPT_TEXT = "Zapłać"
+
+    def __init__(self, db, wallet, recurring_id, parent=None):
+        self.recurring_id = recurring_id
+        super().__init__(db, wallet, parent=parent, initial=payment_draft(db, recurring_id))
+        self.setWindowTitle(f"Płatność: {self.description.text()}")
+
+    def save(self):
+        self.transaction_id = pay_recurring(self.db, self.recurring_id, *self.values())
+
+
+class RecurringDialog(_ProductRowsMixin, _SavingDialog):
+    def __init__(self, db, recurring_id=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.recurring_id = recurring_id
+        self.setWindowTitle(
+            "Edycja transakcji cyklicznej" if recurring_id else "Nowa transakcja cykliczna"
+        )
+        data = (
+            get_recurring(db, recurring_id)
+            if recurring_id
+            else {
+                "wallet_id": None,
+                "kind": "expense",
+                "description": "",
+                "amount_cents": None,
+                "category_id": None,
+                "remaining": None,
+                "rows": [],
+            }
+        )
+        categories = list_categories(db)
+
+        self.wallet = QComboBox()
+        self.currencies = {}
+        for wallet in list_wallets(db):
+            self.wallet.addItem(wallet["name"], wallet["id"])
+            self.currencies[wallet["id"]] = wallet["currency"]
+        self.wallet.setCurrentIndex(max(self.wallet.findData(data["wallet_id"]), 0))
+        self.kind = _kind_combo(data["kind"])
+        self.description = QLineEdit(data["description"])
+        self.description.setMaxLength(200)
+        self.description.setPlaceholderText("np. Czynsz")
+        self.amount = QLineEdit(
+            format_money_input(data["amount_cents"])
+            if data["amount_cents"] is not None
+            else ""
+        )
+        self.amount.setPlaceholderText("puste: ustalana przy płatności")
+        self.category = QComboBox()
+        self.category.addItem("Bez kategorii", None)
+        for item in categories:
+            self.category.addItem(item["name"], item["id"])
+        self.category.setCurrentIndex(max(self.category.findData(data["category_id"]), 0))
+        self.remaining = QLineEdit(
+            "" if data["remaining"] is None else str(data["remaining"])
+        )
+        self.remaining.setPlaceholderText("puste: bez limitu")
+
+        top = QFormLayout()
+        top.addRow("Portfel", self.wallet)
+        top.addRow("Rodzaj", self.kind)
+        top.addRow("Opis", self.description)
+        top.addRow("Kwota", self.amount)
+        top.addRow("Kategoria", self.category)
+        top.addRow("Licznik płatności", self.remaining)
+
+        bottom = self._product_section(data["rows"], categories)
+        hint = QLabel(
+            "Produkty są opcjonalne. Jeśli je dodasz, to one wyznaczą kwotę i kategorie."
+        )
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addWidget(hint)
+        layout.addWidget(self.table, 1)
+        layout.addLayout(bottom)
+        layout.addWidget(_buttons(self))
+        self.resize(760, 560)
+        self.wallet.currentIndexChanged.connect(self._update_totals)
+        self._update_totals()
+
+    def _currency(self):
+        return self.currencies.get(self.wallet.currentData(), "")
+
+    def _has_products(self):
+        return any(
+            row["name"].strip() or row["price"].strip() for row in self.rows()
+        )
+
+    def _update_totals(self):
+        super()._update_totals()
+        has_products = self._has_products()
+        self.amount.setEnabled(not has_products)
+        self.category.setEnabled(not has_products)
+
+    def save(self):
+        values = (
+            self.wallet.currentData(),
+            self.kind.currentData(),
+            self.description.text(),
+            self.amount.text(),
+            self.category.currentData(),
+            self.remaining.text(),
+            self.rows(),
+        )
+        if self.recurring_id is None:
+            self.recurring_id = create_recurring(self.db, *values)
+        else:
+            update_recurring(self.db, self.recurring_id, *values)
 
 
 class TransferDialog(_SavingDialog):

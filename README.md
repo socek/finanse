@@ -12,6 +12,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   dni, z szukaniem po nazwie i filtrami po dacie, kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - przelewy między portfelami, także w różnych walutach
+- transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami i licznikiem
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
   portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
@@ -69,6 +70,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `transactions` – wydatki i przychody w portfelu
 - `products` – pozycje transakcji: nazwa, kategoria, ilość, cena, wartość
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
+- `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

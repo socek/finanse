@@ -308,7 +308,8 @@ class WalletsTab(QWidget):
     def delete_wallet(self):
         wallet = get_wallet(self.db, self.wallet_id())
         if not common.confirm(
-            self, f"Usunąć portfel „{wallet['name']}” razem ze wszystkimi transakcjami?"
+            self, f"Usunąć portfel „{wallet['name']}” razem ze wszystkimi transakcjami, "
+            "także cyklicznymi?"
         ):
             return
         try:

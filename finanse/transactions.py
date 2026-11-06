@@ -14,7 +14,7 @@ MAX_TEXT_LENGTH = 200
 EMPTY_ROW = {"name": "", "category": None, "quantity": "1", "price": ""}
 
 
-def _parse_product_rows(rows, category_ids):
+def parse_product_rows(rows, category_ids, required=True):
     """Zwraca (produkty do zapisu, błędy). Puste wiersze pomija."""
     products, errors = [], []
     number = 0
@@ -54,14 +54,14 @@ def _parse_product_rows(rows, category_ids):
             }
         )
 
-    if number == 0:
+    if required and number == 0:
         errors.append("Dodaj co najmniej jeden produkt.")
     if sum(product["total_cents"] for product in products) > MAX_TRANSACTION_CENTS:
         errors.append("Kwota transakcji jest zbyt duża.")
     return products, errors
 
 
-def _validate(db, kind, occurred_on, description, rows):
+def validate_transaction(db, kind, occurred_on, description, rows):
     errors = []
     description = description.strip()
     if kind not in ("expense", "income"):
@@ -73,7 +73,7 @@ def _validate(db, kind, occurred_on, description, rows):
     if not description or len(description) > MAX_TEXT_LENGTH:
         errors.append(f"Podaj opis (do {MAX_TEXT_LENGTH} znaków).")
     category_ids = {row["id"] for row in db.execute("SELECT id FROM categories")}
-    products, product_errors = _parse_product_rows(rows, category_ids)
+    products, product_errors = parse_product_rows(rows, category_ids)
     errors += product_errors
     if errors:
         raise ValidationError(errors)
@@ -104,7 +104,7 @@ def insert_products(db, transaction_id, products):
 
 
 def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
-    occurred_on, description, products = _validate(
+    occurred_on, description, products = validate_transaction(
         db, kind, occurred_on, description, rows
     )
     with db:
@@ -118,7 +118,7 @@ def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
 
 
 def update_transaction(db, transaction_id, kind, occurred_on, description, rows):
-    occurred_on, description, products = _validate(
+    occurred_on, description, products = validate_transaction(
         db, kind, occurred_on, description, rows
     )
     with db:
