@@ -152,6 +152,7 @@ class ProductsTab(QWidget):
             ]
         )
         item.setData(0, KEY_ROLE, ("product", product["id"], product["transaction_id"]))
+        common.mark_no_category(item, CATEGORY)
         for column in (QUANTITY, PRICE, VALUE):
             item.setTextAlignment(column, RIGHT)
         item.setForeground(

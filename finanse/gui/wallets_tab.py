@@ -247,6 +247,7 @@ class WalletsTab(QWidget):
             ]
         )
         item.setData(DATE, ENTRY_ROLE, ("transaction", transaction["id"]))
+        common.mark_no_category(item, CATEGORY)
         item.setTextAlignment(AMOUNT, RIGHT)
         item.setForeground(
             AMOUNT, common.positive_color() if income else common.negative_color()

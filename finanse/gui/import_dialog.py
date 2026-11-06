@@ -46,6 +46,7 @@ class ImportDialog(QDialog):
         self.category.addItem("Bez kategorii", None)
         for item in list_categories(db):
             self.category.addItem(item["name"], item["id"])
+        common.style_category_combo(self.category)
 
         form = QFormLayout()
         form.addRow("Separator", self.delimiter)

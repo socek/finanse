@@ -1,5 +1,6 @@
 import pytest
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog
 from test_csv_import import BANK_CSV
@@ -1313,6 +1314,121 @@ def test_about_tab_shows_version_and_changelog(db, errors):
     text = window.about.changelog.toPlainText()
     assert "Historia zmian" in text and "0.1 (2026-11-06)" in text
     assert window.about.changelog.isReadOnly()
+
+
+def _is_warning(item, column=None):
+    args = () if column is None else (column,)
+    return (
+        item.background(*args).color() == common.warning_background()
+        and item.foreground(*args).color() == common.warning_text()
+    )
+
+
+def _contrast(color, background):
+    def luminance(c):
+        channels = [v / 255 for v in (c.red(), c.green(), c.blue())]
+        linear = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    high, low = sorted((luminance(color), luminance(background)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_warning_text_is_readable_on_warning_background(qapp):
+    assert _contrast(common.warning_text(), common.warning_background()) >= 7
+
+
+def _categorized_wallet(db):
+    wallet = create_wallet(db, "A")
+    dom = db.execute("SELECT id FROM categories WHERE name = 'Dom'").fetchone()[0]
+    for description, rows in (
+        ("Bez", [(None, "X")]),
+        ("Z", [(dom, "Y")]),
+        ("Mieszany", [(dom, "V"), (None, "W")]),
+    ):
+        create_transaction(
+            db, wallet, "expense", "2026-10-05", description,
+            [
+                {"name": name, "quantity": "1", "price": "1", "category": category}
+                for category, name in rows
+            ],
+        )  # fmt: skip
+    return wallet, dom
+
+
+def test_transaction_list_marks_no_category(db, errors):
+    _categorized_wallet(db)
+    day = WalletsTab(db).tree.topLevelItem(0)
+    rows = {day.child(i).text(1): day.child(i) for i in range(3)}
+    category_column = 3
+    assert _is_warning(rows["Bez"], category_column)
+    assert rows["Bez"].toolTip(category_column) == common.NO_CATEGORY_HINT
+    assert "Bez kategorii" in rows["Mieszany"].text(category_column)
+    assert _is_warning(rows["Mieszany"], category_column)
+    assert not _is_warning(rows["Z"], category_column)
+    assert rows["Z"].toolTip(category_column) == ""
+
+
+def test_products_list_marks_only_products_without_category(db, errors):
+    _categorized_wallet(db)
+    day = ProductsTab(db).tree.topLevelItem(0)
+    rows = {day.child(i).text(1): day.child(i) for i in range(day.childCount())}
+    category_column = 4
+    assert _is_warning(rows["W"], category_column)
+    assert not _is_warning(rows["V"], category_column)
+
+
+def test_recurring_list_marks_no_category(db, errors):
+    wallet, dom = _categorized_wallet(db)
+    create_recurring(db, wallet, "expense", "Bez")
+    create_recurring(db, wallet, "expense", "Z", "1", dom)
+    table = RecurringTab(db).table
+    assert _is_warning(table.item(0, 2))
+    assert not _is_warning(table.item(1, 2))
+
+
+def test_report_marks_no_category(db, errors):
+    _categorized_wallet(db)
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+    names = {}
+    for row in range(tab.expenses_grid.rowCount()):
+        item = tab.expenses_grid.itemAtPosition(row, 0)
+        if item:
+            names[item.widget().text()] = item.widget()
+    style = names["Bez kategorii"].styleSheet()
+    assert common.warning_background().name() in style
+    assert common.warning_text().name() in style
+    assert names["Bez kategorii"].toolTip() == common.NO_CATEGORY_HINT
+    assert names["Dom"].styleSheet() == ""
+
+
+def test_category_combo_marks_no_category_when_selected(db, errors):
+    wallet = create_wallet(db, "A")
+    dialog = TransactionDialog(db, get_wallet(db, wallet))
+    combo = dialog.table.cellWidget(0, dialog.CATEGORY)
+    background, text = QPalette.ColorRole.Button, QPalette.ColorRole.ButtonText
+    assert combo.currentText() == "Bez kategorii"
+    assert combo.palette().color(background) == common.warning_background()
+    assert combo.palette().color(text) == common.warning_text()
+    assert combo.toolTip() == common.NO_CATEGORY_HINT
+    assert combo.itemData(0, Qt.ItemDataRole.BackgroundRole) == common.warning_background()
+    assert combo.itemData(0, Qt.ItemDataRole.ForegroundRole) == common.warning_text()
+
+    combo.setCurrentIndex(combo.findText("Dom"))
+    assert combo.palette().color(background) != common.warning_background()
+    assert combo.palette().color(text) != common.warning_text()
+    assert combo.toolTip() == ""
+    combo.setCurrentIndex(0)
+    assert combo.palette().color(background) == common.warning_background()
+
+
+def test_filter_marks_no_category_item_but_keeps_all_categories_plain(db, errors):
+    tab = WalletsTab(db)
+    combo = tab.filter_bar.category
+    index = combo.findText("Bez kategorii")
+    assert combo.itemData(index, Qt.ItemDataRole.BackgroundRole) == common.warning_background()
+    assert combo.itemData(0, Qt.ItemDataRole.BackgroundRole) is None
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):

@@ -178,6 +178,7 @@ class _ProductRowsMixin:
             category.addItem(item["name"], item["id"])
         found = category.findData(row["category"])
         category.setCurrentIndex(max(found, 0))
+        common.style_category_combo(category)
         quantity = QLineEdit(row["quantity"])
         price = QLineEdit(row["price"])
         value = QLineEdit()
@@ -472,6 +473,7 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         for item in categories:
             self.category.addItem(item["name"], item["id"])
         self.category.setCurrentIndex(max(self.category.findData(data["category_id"]), 0))
+        common.style_category_combo(self.category)
         self.remaining = QLineEdit(
             "" if data["remaining"] is None else str(data["remaining"])
         )

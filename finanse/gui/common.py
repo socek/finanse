@@ -5,6 +5,10 @@ from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QMessageBox
 
 
+NO_CATEGORY_NAME = "Bez kategorii"
+NO_CATEGORY_HINT = "Można tak zostawić, ale kategoria ułatwia czytanie raportów."
+
+
 def _message_box(parent, icon, text):
     box = QMessageBox(icon, "Finanse", text, QMessageBox.StandardButton.NoButton, parent)
     # Treść może zawierać dane użytkownika, których nie wolno czytać jako HTML.
@@ -66,6 +70,70 @@ def positive_color():
 
 def negative_color():
     return _themed("#b3362b", "#f0857a")
+
+
+def warning_background():
+    """Tło tego, co jest dozwolone, ale niezalecane; takie samo w obu motywach."""
+    return QColor("#f5b83d")
+
+
+def warning_text():
+    return QColor("#2b1d00")
+
+
+def mark_no_category(item, column):
+    """Wyróżnia w wierszu listy brak kategorii, także obok innych kategorii."""
+    if NO_CATEGORY_NAME in item.text(column).split(", "):
+        item.setBackground(column, warning_background())
+        item.setForeground(column, warning_text())
+        item.setToolTip(column, NO_CATEGORY_HINT)
+
+
+def mark_no_category_cell(item):
+    """Wyróżnia brak kategorii w komórce tabeli."""
+    item.setBackground(warning_background())
+    item.setForeground(warning_text())
+    item.setToolTip(NO_CATEGORY_HINT)
+
+
+def mark_no_category_label(label):
+    """Wyróżnia brak kategorii w etykiecie."""
+    label.setStyleSheet(
+        f"background: {warning_background().name()};"
+        f" color: {warning_text().name()};"
+        " padding: 1px 4px; border-radius: 3px;"
+    )
+    label.setToolTip(NO_CATEGORY_HINT)
+
+
+def color_no_category_item(combo):
+    """Wyróżnia pozycję braku kategorii na rozwijanej liście."""
+    index = combo.findText(NO_CATEGORY_NAME)
+    if index >= 0:
+        combo.setItemData(index, warning_background(), Qt.ItemDataRole.BackgroundRole)
+        combo.setItemData(index, warning_text(), Qt.ItemDataRole.ForegroundRole)
+        combo.setItemData(index, NO_CATEGORY_HINT, Qt.ItemDataRole.ToolTipRole)
+
+
+def style_category_combo(combo):
+    """Wyróżnia brak kategorii na liście oraz wtedy, gdy jest wybrany."""
+    color_no_category_item(combo)
+
+    def update():
+        selected = combo.currentText() == NO_CATEGORY_NAME
+        palette = QPalette(combo.palette())
+        default = QApplication.palette()
+        for role, color in (
+            (QPalette.ColorRole.Button, warning_background()),
+            (QPalette.ColorRole.ButtonText, warning_text()),
+            (QPalette.ColorRole.Text, warning_text()),
+        ):
+            palette.setColor(role, color if selected else default.color(role))
+        combo.setPalette(palette)
+        combo.setToolTip(NO_CATEGORY_HINT if selected else "")
+
+    combo.currentIndexChanged.connect(update)
+    update()
 
 
 def income_series():

@@ -548,6 +548,9 @@ class ReportsTab(QWidget):
         for index, row in enumerate(rows):
             value = QLabel(f"{format_money(row['total'], currency)}  ({row['share']})")
             value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            grid.addWidget(common.plain_label(row["name"]), index, 0)
+            name = common.plain_label(row["name"])
+            if row["name"] == common.NO_CATEGORY_NAME:
+                common.mark_no_category_label(name)
+            grid.addWidget(name, index, 0, Qt.AlignmentFlag.AlignLeft)
             grid.addWidget(ShareBar(row["bar_pct"], color), index, 1)
             grid.addWidget(value, index, 2)

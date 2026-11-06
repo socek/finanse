@@ -125,6 +125,8 @@ class RecurringTab(QWidget):
                 cell.setTextAlignment(RIGHT)
             self.table.setItem(row, column, cell)
         self.table.item(row, DESCRIPTION).setData(Qt.ItemDataRole.UserRole, item["id"])
+        if categories == common.NO_CATEGORY_NAME:
+            common.mark_no_category_cell(self.table.item(row, CATEGORY))
         if item["total_cents"] is not None:
             self.table.item(row, AMOUNT).setForeground(
                 common.positive_color() if income else common.negative_color()

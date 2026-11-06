@@ -92,6 +92,7 @@ class FilterBar(QWidget):
         self.category.addItem("Bez kategorii", NO_CATEGORY)
         for category in list_categories(self.db):
             self.category.addItem(category["name"], category["id"])
+        common.color_no_category_item(self.category)
         self.category.setCurrentIndex(max(self.category.findData(selected), 0))
         self.category.blockSignals(False)
 
