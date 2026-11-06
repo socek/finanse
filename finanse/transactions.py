@@ -1,20 +1,6 @@
 from datetime import date
-from itertools import zip_longest
 
-from flask import (
-    Blueprint,
-    abort,
-    flash,
-    g,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-
-from .auth import login_required
-from .categories import user_categories
-from .db import get_db
+from .errors import ValidationError
 from .money import (
     MAX_TRANSACTION_CENTS,
     format_money_input,
@@ -23,55 +9,27 @@ from .money import (
     parse_money,
     parse_quantity,
 )
-from .wallets import get_wallet_or_404
-
-bp = Blueprint("transactions", __name__)
 
 MAX_TEXT_LENGTH = 200
-EMPTY_ROW = {"name": "", "category": "", "quantity": "1", "price": ""}
+EMPTY_ROW = {"name": "", "category": None, "quantity": "1", "price": ""}
 
 
-def _get_transaction_or_404(transaction_id):
-    transaction = (
-        get_db()
-        .execute(
-            """
-            SELECT t.*
-            FROM transactions t
-            JOIN wallets w ON w.id = t.wallet_id
-            WHERE t.id = ? AND w.user_id = ?
-            """,
-            (transaction_id, g.user["id"]),
-        )
-        .fetchone()
-    )
-    if transaction is None:
-        abort(404)
-    return transaction
-
-
-def _parse_product_rows(form, category_ids):
-    """Zwraca (wiersze formularza, produkty do zapisu, błędy). Puste wiersze pomija."""
-    rows, products, errors = [], [], []
-    columns = zip_longest(
-        form.getlist("product_name"),
-        form.getlist("product_quantity"),
-        form.getlist("product_price"),
-        form.getlist("product_category"),
-        fillvalue="",
-    )
-    for name, quantity, price, category in columns:
-        name, quantity, price = name.strip(), quantity.strip(), price.strip()
+def _parse_product_rows(rows, category_ids):
+    """Zwraca (produkty do zapisu, błędy). Puste wiersze pomija."""
+    products, errors = [], []
+    number = 0
+    for row in rows:
+        name = row.get("name", "").strip()
+        quantity = row.get("quantity", "").strip()
+        price = row.get("price", "").strip()
+        category = row.get("category")
         if not name and not price and quantity in ("", "1"):
             continue
-        rows.append(
-            {"name": name, "category": category, "quantity": quantity, "price": price}
-        )
-        number = len(rows)
+        number += 1
 
         if not name or len(name) > MAX_TEXT_LENGTH:
             errors.append(f"Produkt {number}: podaj nazwę (do {MAX_TEXT_LENGTH} znaków).")
-        if category and category not in category_ids:
+        if category is not None and category not in category_ids:
             errors.append(f"Produkt {number}: niepoprawna kategoria.")
             continue
         try:
@@ -89,38 +47,37 @@ def _parse_product_rows(form, category_ids):
         products.append(
             {
                 "name": name,
-                "category_id": int(category) if category else None,
+                "category_id": category,
                 "quantity_milli": quantity_milli,
                 "unit_price_cents": price_cents,
                 "total_cents": line_total(quantity_milli, price_cents),
             }
         )
 
-    if not rows:
+    if number == 0:
         errors.append("Dodaj co najmniej jeden produkt.")
     if sum(product["total_cents"] for product in products) > MAX_TRANSACTION_CENTS:
         errors.append("Kwota transakcji jest zbyt duża.")
-    return rows, products, errors
+    return products, errors
 
 
-def _parse_transaction_form(form, categories):
-    values = {
-        "kind": form.get("kind", ""),
-        "occurred_on": form.get("occurred_on", "").strip(),
-        "description": form.get("description", "").strip(),
-    }
+def _validate(db, kind, occurred_on, description, rows):
     errors = []
-    if values["kind"] not in ("expense", "income"):
+    description = description.strip()
+    if kind not in ("expense", "income"):
         errors.append("Wybierz rodzaj transakcji.")
     try:
-        values["occurred_on"] = date.fromisoformat(values["occurred_on"]).isoformat()
+        occurred_on = date.fromisoformat(occurred_on.strip()).isoformat()
     except ValueError:
         errors.append("Podaj poprawną datę.")
-    if not values["description"] or len(values["description"]) > MAX_TEXT_LENGTH:
+    if not description or len(description) > MAX_TEXT_LENGTH:
         errors.append(f"Podaj opis (do {MAX_TEXT_LENGTH} znaków).")
-    category_ids = {str(category["id"]) for category in categories}
-    rows, products, product_errors = _parse_product_rows(form, category_ids)
-    return values, rows, products, errors + product_errors
+    category_ids = {row["id"] for row in db.execute("SELECT id FROM categories")}
+    products, product_errors = _parse_product_rows(rows, category_ids)
+    errors += product_errors
+    if errors:
+        raise ValidationError(errors)
+    return occurred_on, description, products
 
 
 def insert_products(db, transaction_id, products):
@@ -146,115 +103,60 @@ def insert_products(db, transaction_id, products):
     )
 
 
-def _render_form(wallet, values, rows, categories, title, transaction=None):
-    return render_template(
-        "transactions/form.html",
-        wallet=wallet,
-        values=values,
-        rows=rows or [EMPTY_ROW],
-        empty_row=EMPTY_ROW,
-        categories=categories,
-        title=title,
-        transaction=transaction,
+def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
+    occurred_on, description, products = _validate(
+        db, kind, occurred_on, description, rows
     )
+    with db:
+        transaction_id = db.execute(
+            "INSERT INTO transactions (wallet_id, kind, occurred_on, description)"
+            " VALUES (?, ?, ?, ?)",
+            (wallet_id, kind, occurred_on, description),
+        ).lastrowid
+        insert_products(db, transaction_id, products)
+    return transaction_id
 
 
-@bp.route("/wallets/<int:wallet_id>/transactions/new", methods=("GET", "POST"))
-@login_required
-def create(wallet_id):
-    wallet = get_wallet_or_404(wallet_id)
-    categories = user_categories()
-    values = {
-        "kind": "expense",
-        "occurred_on": date.today().isoformat(),
-        "description": "",
-    }
-    rows = []
-    if request.method == "POST":
-        values, rows, products, errors = _parse_transaction_form(
-            request.form, categories
-        )
-        if not errors:
-            db = get_db()
-            with db:
-                cursor = db.execute(
-                    "INSERT INTO transactions"
-                    " (wallet_id, kind, occurred_on, description)"
-                    " VALUES (?, ?, ?, ?)",
-                    (
-                        wallet_id,
-                        values["kind"],
-                        values["occurred_on"],
-                        values["description"],
-                    ),
-                )
-                insert_products(db, cursor.lastrowid, products)
-            return redirect(url_for("wallets.detail", wallet_id=wallet_id))
-        for error in errors:
-            flash(error, "error")
-    return _render_form(wallet, values, rows, categories, "Nowa transakcja")
-
-
-@bp.route("/transactions/<int:transaction_id>/edit", methods=("GET", "POST"))
-@login_required
-def edit(transaction_id):
-    transaction = _get_transaction_or_404(transaction_id)
-    wallet = get_wallet_or_404(transaction["wallet_id"])
-    categories = user_categories()
-    db = get_db()
-    if request.method == "POST":
-        values, rows, products, errors = _parse_transaction_form(
-            request.form, categories
-        )
-        if not errors:
-            with db:
-                db.execute(
-                    "UPDATE transactions"
-                    " SET kind = ?, occurred_on = ?, description = ?"
-                    " WHERE id = ?",
-                    (
-                        values["kind"],
-                        values["occurred_on"],
-                        values["description"],
-                        transaction_id,
-                    ),
-                )
-                db.execute(
-                    "DELETE FROM products WHERE transaction_id = ?", (transaction_id,)
-                )
-                insert_products(db, transaction_id, products)
-            return redirect(url_for("wallets.detail", wallet_id=wallet["id"]))
-        for error in errors:
-            flash(error, "error")
-    else:
-        values = {
-            "kind": transaction["kind"],
-            "occurred_on": transaction["occurred_on"],
-            "description": transaction["description"],
-        }
-        rows = [
-            {
-                "name": product["name"],
-                "category": str(product["category_id"] or ""),
-                "quantity": format_quantity(product["quantity_milli"]),
-                "price": format_money_input(product["unit_price_cents"]),
-            }
-            for product in db.execute(
-                "SELECT * FROM products WHERE transaction_id = ? ORDER BY position",
-                (transaction_id,),
-            )
-        ]
-    return _render_form(
-        wallet, values, rows, categories, "Edycja transakcji", transaction
+def update_transaction(db, transaction_id, kind, occurred_on, description, rows):
+    occurred_on, description, products = _validate(
+        db, kind, occurred_on, description, rows
     )
+    with db:
+        db.execute(
+            "UPDATE transactions SET kind = ?, occurred_on = ?, description = ?"
+            " WHERE id = ?",
+            (kind, occurred_on, description, transaction_id),
+        )
+        db.execute("DELETE FROM products WHERE transaction_id = ?", (transaction_id,))
+        insert_products(db, transaction_id, products)
 
 
-@bp.post("/transactions/<int:transaction_id>/delete")
-@login_required
-def delete(transaction_id):
-    transaction = _get_transaction_or_404(transaction_id)
-    db = get_db()
+def delete_transaction(db, transaction_id):
     with db:
         db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
-    flash("Usunięto transakcję.", "success")
-    return redirect(url_for("wallets.detail", wallet_id=transaction["wallet_id"]))
+
+
+def get_transaction(db, transaction_id):
+    """Transakcja wraz z wierszami produktów w postaci do edycji."""
+    transaction = db.execute(
+        "SELECT * FROM transactions WHERE id = ?", (transaction_id,)
+    ).fetchone()
+    rows = [
+        {
+            "name": product["name"],
+            "category": product["category_id"],
+            "quantity": format_quantity(product["quantity_milli"]),
+            "price": format_money_input(product["unit_price_cents"]),
+        }
+        for product in db.execute(
+            "SELECT * FROM products WHERE transaction_id = ? ORDER BY position",
+            (transaction_id,),
+        )
+    ]
+    return {
+        "wallet_id": transaction["wallet_id"],
+        "kind": transaction["kind"],
+        "occurred_on": transaction["occurred_on"],
+        "description": transaction["description"],
+        "rows": rows,
+    }

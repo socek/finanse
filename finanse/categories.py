@@ -1,118 +1,51 @@
 import sqlite3
 
-from flask import (
-    Blueprint,
-    abort,
-    flash,
-    g,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-
-from .auth import login_required
-from .db import get_db
-
-bp = Blueprint("categories", __name__, url_prefix="/categories")
+from .errors import ValidationError
 
 MAX_NAME_LENGTH = 50
 
 
-def user_categories():
-    return (
-        get_db()
-        .execute(
-            "SELECT id, name FROM categories WHERE user_id = ? ORDER BY name",
-            (g.user["id"],),
-        )
-        .fetchall()
-    )
+def list_categories(db):
+    return db.execute(
+        """
+        SELECT c.id, c.name, COUNT(p.id) AS product_count
+        FROM categories c
+        LEFT JOIN products p ON p.category_id = c.id
+        GROUP BY c.id
+        ORDER BY c.name
+        """
+    ).fetchall()
 
 
-def _get_category_or_404(category_id):
-    category = (
-        get_db()
-        .execute(
-            "SELECT * FROM categories WHERE id = ? AND user_id = ?",
-            (category_id, g.user["id"]),
-        )
-        .fetchone()
-    )
-    if category is None:
-        abort(404)
-    return category
-
-
-def _clean_name():
-    name = request.form.get("name", "").strip()
+def _clean(name):
+    name = name.strip()
     if not name or len(name) > MAX_NAME_LENGTH:
-        flash(f"Podaj nazwę kategorii (do {MAX_NAME_LENGTH} znaków).", "error")
-        return None
+        raise ValidationError(f"Podaj nazwę kategorii (do {MAX_NAME_LENGTH} znaków).")
     return name
 
 
-@bp.get("")
-@login_required
-def index():
-    categories = (
-        get_db()
-        .execute(
-            """
-            SELECT c.id, c.name, COUNT(p.id) AS product_count
-            FROM categories c
-            LEFT JOIN products p ON p.category_id = c.id
-            WHERE c.user_id = ?
-            GROUP BY c.id
-            ORDER BY c.name
-            """,
-            (g.user["id"],),
-        )
-        .fetchall()
-    )
-    return render_template("categories/index.html", categories=categories)
+def create_category(db, name):
+    name = _clean(name)
+    try:
+        with db:
+            return db.execute(
+                "INSERT INTO categories (name) VALUES (?)", (name,)
+            ).lastrowid
+    except sqlite3.IntegrityError:
+        raise ValidationError("Masz już kategorię o tej nazwie.") from None
 
 
-@bp.post("")
-@login_required
-def create():
-    name = _clean_name()
-    if name:
-        db = get_db()
-        try:
-            with db:
-                db.execute(
-                    "INSERT INTO categories (user_id, name) VALUES (?, ?)",
-                    (g.user["id"], name),
-                )
-        except sqlite3.IntegrityError:
-            flash("Masz już kategorię o tej nazwie.", "error")
-    return redirect(url_for("categories.index"))
+def rename_category(db, category_id, name):
+    name = _clean(name)
+    try:
+        with db:
+            db.execute(
+                "UPDATE categories SET name = ? WHERE id = ?", (name, category_id)
+            )
+    except sqlite3.IntegrityError:
+        raise ValidationError("Masz już kategorię o tej nazwie.") from None
 
 
-@bp.post("/<int:category_id>/rename")
-@login_required
-def rename(category_id):
-    _get_category_or_404(category_id)
-    name = _clean_name()
-    if name:
-        db = get_db()
-        try:
-            with db:
-                db.execute(
-                    "UPDATE categories SET name = ? WHERE id = ?", (name, category_id)
-                )
-        except sqlite3.IntegrityError:
-            flash("Masz już kategorię o tej nazwie.", "error")
-    return redirect(url_for("categories.index"))
-
-
-@bp.post("/<int:category_id>/delete")
-@login_required
-def delete(category_id):
-    category = _get_category_or_404(category_id)
-    db = get_db()
+def delete_category(db, category_id):
     with db:
         db.execute("DELETE FROM categories WHERE id = ?", (category_id,))
-    flash(f"Usunięto kategorię „{category['name']}”.", "success")
-    return redirect(url_for("categories.index"))

@@ -2,45 +2,12 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-from flask import current_app, g
 
-DEFAULT_CATEGORIES = (
-    "Jedzenie",
-    "Dom",
-    "Rachunki",
-    "Transport",
-    "Zdrowie",
-    "Ubrania",
-    "Rozrywka",
-    "Wynagrodzenie",
-    "Inne",
-)
-
-
-def _connect(path):
+def connect(path):
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
-
-
-def get_db():
-    if "db" not in g:
-        g.db = _connect(current_app.config["DATABASE"])
-    return g.db
-
-
-def close_db(_exception=None):
-    connection = g.pop("db", None)
-    if connection is not None:
-        connection.close()
-
-
-def seed_default_categories(db, user_id):
-    db.executemany(
-        "INSERT INTO categories (user_id, name) VALUES (?, ?)",
-        [(user_id, name) for name in DEFAULT_CATEGORIES],
-    )
 
 
 def _migrations():
@@ -63,8 +30,11 @@ def _backup(connection, path, version):
 
 
 def init_db(path):
-    connection = _connect(path)
+    connection = connect(path)
     try:
+        # Migracje przebudowują tabele, a DROP TABLE przy włączonych kluczach obcych
+        # skasowałby kaskadowo wiersze zależne. Spójność sprawdzamy przed COMMIT.
+        connection.execute("PRAGMA foreign_keys = OFF")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         pending = [item for item in _migrations() if item[0] > version]
         has_tables = connection.execute(
@@ -75,8 +45,13 @@ def init_db(path):
         for number, sql in pending:
             try:
                 connection.executescript(
-                    f"BEGIN;\n{sql}\nPRAGMA user_version = {number};\nCOMMIT;"
+                    f"BEGIN;\n{sql}\nPRAGMA user_version = {number};"
                 )
+                if connection.execute("PRAGMA foreign_key_check").fetchone():
+                    raise sqlite3.IntegrityError(
+                        f"Migracja {number} naruszyła klucze obce."
+                    )
+                connection.commit()
             except sqlite3.Error:
                 connection.rollback()
                 raise

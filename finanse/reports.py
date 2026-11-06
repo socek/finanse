@@ -3,14 +3,8 @@ import re
 from collections import Counter
 from datetime import date
 
-from flask import Blueprint, render_template, request, url_for
-
-from .auth import login_required
-from .db import get_db
 from .money import NBSP, format_money
-from .wallets import user_wallets
-
-bp = Blueprint("reports", __name__, url_prefix="/reports")
+from .wallets import list_wallets
 
 MONTHS = (
     "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
@@ -75,13 +69,13 @@ def _format_tick(value, axis_max):
     return f"{value // 1000}{NBSP}tys."
 
 
-def _trend(wallet_ids, year, month, currency, scope):
+def _trend(db, wallet_ids, year, month, currency):
     marks = ",".join("?" * len(wallet_ids))
     first_year, first_month = _shift_month(year, month, -(TREND_MONTHS - 1))
     end_year, end_month = _shift_month(year, month, 1)
     totals = {
         (row["month"], row["kind"]): row["total"]
-        for row in get_db().execute(
+        for row in db.execute(
             f"""
             SELECT substr(t.occurred_on, 1, 7) AS month, t.kind,
                    SUM(p.total_cents) AS total
@@ -117,7 +111,6 @@ def _trend(wallet_ids, year, month, currency, scope):
                 "income_pct": round(income / (axis_max * 100) * 100, 2),
                 "expense_pct": round(expense / (axis_max * 100) * 100, 2),
                 "selected": (y, m) == (year, month),
-                "url": url_for("reports.index", scope=scope, month=key),
                 "tip": (
                     f"{title} · Przychody: {format_money(income, currency)}"
                     f" · Wydatki: {format_money(expense, currency)}"
@@ -134,12 +127,11 @@ def _trend(wallet_ids, year, month, currency, scope):
     return {"months": months, "ticks": ticks, "has_data": largest > 0}
 
 
-def _by_category(wallet_ids, year, month, kind, currency):
+def _by_category(db, wallet_ids, year, month, kind, currency):
     marks = ",".join("?" * len(wallet_ids))
     end_year, end_month = _shift_month(year, month, 1)
     rows = (
-        get_db()
-        .execute(
+        db.execute(
             f"""
             SELECT COALESCE(c.name, 'Bez kategorii') AS name,
                    SUM(p.total_cents) AS total
@@ -180,36 +172,33 @@ def _by_category(wallet_ids, year, month, kind, currency):
     return result, grand_total
 
 
-@bp.get("")
-@login_required
-def index():
-    wallets = user_wallets()
+def build_report(db, scope="", month=""):
+    """Dane raportu miesięcznego; None, gdy nie ma żadnego portfela."""
+    wallets = list_wallets(db)
     if not wallets:
-        return render_template("reports/index.html", wallets=wallets)
+        return None
 
-    year, month = _parse_month(request.args.get("month", ""))
-    scope, wallet_ids, currency = _resolve_scope(
-        request.args.get("scope", ""), wallets
-    )
+    year, month_number = _parse_month(month)
+    scope, wallet_ids, currency = _resolve_scope(scope, wallets)
     expenses, expense_total = _by_category(
-        wallet_ids, year, month, "expense", currency
+        db, wallet_ids, year, month_number, "expense", currency
     )
-    incomes, income_total = _by_category(wallet_ids, year, month, "income", currency)
-
-    return render_template(
-        "reports/index.html",
-        wallets=wallets,
-        currencies=sorted({wallet["currency"] for wallet in wallets}),
-        scope=scope,
-        currency=currency,
-        month_key=_month_key(year, month),
-        month_title=f"{MONTHS[month - 1]} {year}",
-        previous_month=_month_key(*_shift_month(year, month, -1)),
-        next_month=_month_key(*_shift_month(year, month, 1)),
-        expenses=expenses,
-        expense_total=expense_total,
-        incomes=incomes,
-        income_total=income_total,
-        net_total=income_total - expense_total,
-        trend=_trend(wallet_ids, year, month, currency, scope),
+    incomes, income_total = _by_category(
+        db, wallet_ids, year, month_number, "income", currency
     )
+    return {
+        "wallets": wallets,
+        "currencies": sorted({wallet["currency"] for wallet in wallets}),
+        "scope": scope,
+        "currency": currency,
+        "month_key": _month_key(year, month_number),
+        "month_title": f"{MONTHS[month_number - 1]} {year}",
+        "previous_month": _month_key(*_shift_month(year, month_number, -1)),
+        "next_month": _month_key(*_shift_month(year, month_number, 1)),
+        "expenses": expenses,
+        "expense_total": expense_total,
+        "incomes": incomes,
+        "income_total": income_total,
+        "net_total": income_total - expense_total,
+        "trend": _trend(db, wallet_ids, year, month_number, currency),
+    }

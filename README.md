@@ -1,7 +1,9 @@
 # Finanse
 
-Aplikacja webowa do spisywania finansów: użytkownik ma wiele portfeli, portfel
-ma wiele transakcji, a transakcja wiele produktów.
+Okienkowa aplikacja do spisywania finansów na jednym komputerze: wiele portfeli,
+portfel ma wiele transakcji, a transakcja wiele produktów. Interfejs jest w Qt
+(PySide6). Aplikacja nie ma kont ani logowania, a baza SQLite nie jest szyfrowana,
+więc dostęp do danych chronią tylko uprawnienia do pliku.
 
 ## Funkcje
 
@@ -11,21 +13,17 @@ ma wiele transakcji, a transakcja wiele produktów.
 - przelewy między portfelami, także w różnych walutach
 - raporty miesięczne: bilans, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
-- zmiana hasła oraz reset hasła kodem odzyskiwania
 
 ## Uruchomienie
 
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/flask --app finanse run
+.venv/bin/python -m finanse
 ```
 
-Aplikacja działa pod adresem <http://127.0.0.1:5000>. Baza SQLite i klucz sesji
-powstają przy pierwszym uruchomieniu w katalogu `instance/`.
-
-Ten serwer jest przeznaczony do użytku lokalnego. Przy wystawianiu aplikacji do
-sieci użyj serwera WSGI za proxy HTTPS i ustaw `SESSION_COOKIE_SECURE`.
+Baza powstaje przy pierwszym uruchomieniu jako `instance/finanse.db`. Inną bazę
+można wskazać argumentem: `.venv/bin/python -m finanse /sciezka/do/bazy.db`.
 
 ## Aktualizacja bazy
 
@@ -33,21 +31,13 @@ Zmiany schematu są w `finanse/migrations/NNN_nazwa.sql` i wykonują się same p
 starcie aplikacji. Przed migracją istniejącej bazy aplikacja zapisuje jej kopię
 jako `instance/finanse.db.backup-vN`, gdzie `N` to wersja sprzed migracji.
 
-## Reset hasła
-
-Aplikacja nie wysyła e-maili. Przy rejestracji użytkownik dostaje jednorazowo
-pokazywany kod odzyskiwania, którym może ustawić nowe hasło na stronie logowania.
-Konta sprzed wprowadzenia tej funkcji mogą wygenerować kod na stronie **Konto**.
-
-Właściciel serwera może też ustawić hasło z konsoli:
-
-```sh
-.venv/bin/flask --app finanse reset-password NAZWA_UZYTKOWNIKA
-```
+Migracja 3 usuwa konta. Baza z więcej niż jednym kontem nie zostanie zmigrowana,
+bo ich danych nie da się bezpiecznie scalić: aplikacja pokaże błąd i nic nie zmieni.
+Kopie sprzed tej migracji nadal zawierają tabelę `users` z hashami haseł.
 
 ## Import z banku
 
-W portfelu wybierz **Import CSV** i wskaż plik z banku. Aplikacja rozpoznaje
+Wybierz portfel, kliknij **Import CSV** i wskaż plik z banku. Aplikacja rozpoznaje
 kodowanie, separator i kolumny, a przed zapisem pokazuje podgląd, w którym można
 to poprawić. Każdy wiersz staje się transakcją z jednym produktem: kwoty ujemne
 to wydatki, a dodatnie to przychody.
@@ -68,11 +58,12 @@ to wydatki, a dodatnie to przychody.
 .venv/bin/python -m pytest
 ```
 
+Testy okien działają bez ekranu, na platformie Qt `offscreen`.
+
 ## Model danych
 
-- `users` – konta użytkowników
-- `wallets` – portfele użytkownika
-- `categories` – kategorie użytkownika
+- `wallets` – portfele
+- `categories` – kategorie
 - `transactions` – wydatki i przychody w portfelu
 - `products` – pozycje transakcji: nazwa, kategoria, ilość, cena, wartość
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
