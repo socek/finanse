@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Kategorie – Finanse{% endblock %}
+{% block content %}
+<h1>Kategorie</h1>
+<form method="post" action="{{ url_for('categories.create') }}" class="card inline-form add-category">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="grow">Nowa kategoria
+    <input name="name" maxlength="50" required>
+  </label>
+  <button type="submit">Dodaj</button>
+</form>
+
+{% if categories %}
+  <ul class="transactions">
+    {% for category in categories %}
+      <li class="card category-row">
+        <form method="post" action="{{ url_for('categories.rename', category_id=category.id) }}" class="inline-form grow">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input name="name" value="{{ category.name }}" maxlength="50" aria-label="Nazwa kategorii" required>
+          <button class="secondary" type="submit">Zapisz</button>
+        </form>
+        <span class="muted">Produkty: {{ category.product_count }}</span>
+        <form method="post" action="{{ url_for('categories.delete', category_id=category.id) }}"
+              data-confirm="Usunąć kategorię „{{ category.name }}”? Jej produkty trafią do „Bez kategorii”.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="link danger" type="submit">Usuń</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="card muted">Nie masz jeszcze kategorii. Dodaj pierwszą powyżej.</p>
+{% endif %}
+{% endblock %}

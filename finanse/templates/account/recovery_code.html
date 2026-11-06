@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Kod odzyskiwania – Finanse{% endblock %}
+{% block content %}
+<h1>Zapisz kod odzyskiwania</h1>
+<div class="card narrow stack">
+  <p class="recovery-code"><code>{{ code }}</code></p>
+  <p>Ten kod pozwala ustawić nowe hasło, gdy zapomnisz obecnego. Zapisz go w bezpiecznym miejscu, bo nie pokażemy go ponownie. Po użyciu dostaniesz nowy.</p>
+  <a class="button" href="{{ url_for('wallets.index') }}">Kod zapisany, przejdź dalej</a>
+</div>
+{% endblock %}

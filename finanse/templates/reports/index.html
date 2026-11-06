@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Raporty – Finanse{% endblock %}
+
+{% macro category_bars(rows, series) %}
+  <ul class="category-bars">
+    {% for row in rows %}
+      <li data-tip="{{ row.tip }}">
+        <span class="category-name">{{ row.name }}</span>
+        <span class="category-track"><span class="category-bar {{ series }}" style="width: {{ row.bar_pct }}%"></span></span>
+        <span class="category-value">{{ row.total | money(currency) }} <span class="muted">{{ row.share }}</span></span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
+
+{% block content %}
+<h1>Raporty</h1>
+{% if not wallets %}
+  <p class="card muted">Dodaj portfel, aby zobaczyć raporty. <a href="{{ url_for('wallets.create') }}">Nowy portfel</a></p>
+{% else %}
+  <form method="get" class="card filter">
+    <label>Zakres
+      <select name="scope">
+        <optgroup label="Wszystkie portfele">
+          {% for code in currencies %}
+            <option value="currency:{{ code }}" {{ 'selected' if scope == 'currency:' ~ code }}>Wszystkie w {{ code }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Jeden portfel">
+          {% for wallet in wallets %}
+            <option value="wallet:{{ wallet.id }}" {{ 'selected' if scope == 'wallet:' ~ wallet.id }}>{{ wallet.name }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+    </label>
+    <label>Miesiąc
+      <input type="month" name="month" value="{{ month_key }}" placeholder="RRRR-MM">
+    </label>
+    <button class="secondary" type="submit">Pokaż</button>
+  </form>
+
+  <div class="heading month-nav">
+    <a href="{{ url_for('reports.index', scope=scope, month=previous_month) }}">← Poprzedni</a>
+    <h2>{{ month_title }}</h2>
+    <a href="{{ url_for('reports.index', scope=scope, month=next_month) }}">Następny →</a>
+  </div>
+
+  <div class="stats">
+    <div class="card stat"><span class="muted">Przychody</span><strong>{{ income_total | money(currency) }}</strong></div>
+    <div class="card stat"><span class="muted">Wydatki</span><strong>{{ expense_total | money(currency) }}</strong></div>
+    <div class="card stat"><span class="muted">Bilans</span><strong>{{ net_total | money(currency) }}</strong></div>
+  </div>
+
+  <section class="card report-section">
+    <h2>Wydatki według kategorii</h2>
+    {% if expenses %}
+      {{ category_bars(expenses, 'expense') }}
+    {% else %}
+      <p class="muted">Brak wydatków w tym miesiącu.</p>
+    {% endif %}
+  </section>
+
+  {% if incomes %}
+    <section class="card report-section">
+      <h2>Przychody według kategorii</h2>
+      {{ category_bars(incomes, 'income') }}
+    </section>
+  {% endif %}
+
+  <section class="card report-section">
+    <h2>Ostatnie 12 miesięcy</h2>
+    {% if trend.has_data %}
+      <ul class="legend">
+        <li><span class="swatch income"></span>Przychody</li>
+        <li><span class="swatch expense"></span>Wydatki</li>
+      </ul>
+      <div class="trend">
+        <div class="trend-grid" aria-hidden="true">
+          {% for tick in trend.ticks %}
+            <div class="trend-line" style="bottom: {{ tick.pct }}%"><span>{{ tick.label }}</span></div>
+          {% endfor %}
+        </div>
+        <div class="trend-months">
+          {% for month in trend.months %}
+            <a class="trend-month {{ 'selected' if month.selected }}" href="{{ month.url }}"
+               data-tip="{{ month.tip }}" aria-label="{{ month.tip }}">
+              <span class="trend-bars">
+                {% if month.income %}<span class="trend-bar income" style="height: {{ month.income_pct }}%"></span>{% endif %}
+                {% if month.expense %}<span class="trend-bar expense" style="height: {{ month.expense_pct }}%"></span>{% endif %}
+              </span>
+              <span class="trend-label">{{ month.short }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+      <details class="trend-table">
+        <summary>Pokaż jako tabelę</summary>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Miesiąc</th><th class="num">Przychody</th><th class="num">Wydatki</th></tr></thead>
+            <tbody>
+              {% for month in trend.months %}
+                <tr>
+                  <td>{{ month.title }}</td>
+                  <td class="num">{{ month.income | money(currency) }}</td>
+                  <td class="num">{{ month.expense | money(currency) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    {% else %}
+      <p class="muted">Brak transakcji w tym okresie.</p>
+    {% endif %}
+  </section>
+  <p class="muted hint">Raporty nie uwzględniają przelewów między portfelami.</p>
+{% endif %}
+{% endblock %}

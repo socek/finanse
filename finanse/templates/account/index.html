@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Konto – Finanse{% endblock %}
+{% block content %}
+<h1>Konto: {{ g.user.username }}</h1>
+<div class="stack">
+  <form method="post" action="{{ url_for('auth.change_password') }}" class="card narrow stack">
+    <h2>Zmiana hasła</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Obecne hasło
+      <input type="password" name="current_password" autocomplete="current-password" required>
+    </label>
+    <label>Nowe hasło
+      <input type="password" name="new_password" minlength="8" autocomplete="new-password" required>
+    </label>
+    <button type="submit">Zmień hasło</button>
+    <p class="muted hint">Zmiana wyloguje Cię na innych urządzeniach.</p>
+  </form>
+
+  <form method="post" action="{{ url_for('auth.regenerate_recovery_code') }}" class="card narrow stack">
+    <h2>Kod odzyskiwania</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if g.user.recovery_code_hash %}
+      <p class="muted hint">Masz aktywny kod. Wygenerowanie nowego unieważni poprzedni.</p>
+    {% else %}
+      <p class="flash error">Nie masz jeszcze kodu, więc po utracie hasła nie zresetujesz go samodzielnie.</p>
+    {% endif %}
+    <label>Obecne hasło
+      <input type="password" name="current_password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Wygeneruj nowy kod</button>
+  </form>
+</div>
+{% endblock %}

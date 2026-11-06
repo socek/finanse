@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ wallet.name }} – Finanse{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('wallets.index') }}">← Portfele</a></p>
+<div class="heading">
+  <div>
+    <h1>{{ wallet.name }}</h1>
+    <p class="balance {{ 'negative' if wallet.balance_cents < 0 }}">{{ wallet.balance_cents | money(wallet.currency) }}</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('transactions.create', wallet_id=wallet.id) }}">Nowa transakcja</a>
+    <a href="{{ url_for('transfers.create', from=wallet.id) }}">Przelew</a>
+    <a href="{{ url_for('bank_import.upload', wallet_id=wallet.id) }}">Import CSV</a>
+    <a href="{{ url_for('wallets.edit', wallet_id=wallet.id) }}">Edytuj</a>
+    <form method="post" action="{{ url_for('wallets.delete', wallet_id=wallet.id) }}"
+          data-confirm="Usunąć portfel „{{ wallet.name }}” razem ze wszystkimi transakcjami?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="link danger" type="submit">Usuń</button>
+    </form>
+  </div>
+</div>
+
+<form method="get" class="card filter">
+  <label>Od <input type="date" name="date_from" value="{{ date_from }}"></label>
+  <label>Do <input type="date" name="date_to" value="{{ date_to }}"></label>
+  <button class="secondary" type="submit">Filtruj</button>
+  {% if filtered %}<a href="{{ url_for('wallets.detail', wallet_id=wallet.id) }}">Wyczyść</a>{% endif %}
+</form>
+
+{% if summary %}
+  <p class="muted">
+    W tym okresie: przychody {{ summary.income | money(wallet.currency) }},
+    wydatki {{ summary.expense | money(wallet.currency) }}.
+  </p>
+{% endif %}
+
+{% if entries %}
+  <ul class="transactions">
+    {% for entry in entries %}
+      {% set item = entry['item'] %}
+      {% if entry['type'] == 'transaction' %}
+        <li class="card">
+          <details>
+            <summary>
+              <span class="muted date">{{ item.occurred_on }}</span>
+              <span class="description">{{ item.description }}</span>
+              <strong class="{{ 'positive' if item.kind == 'income' else 'negative' }}">
+                {{- '+' if item.kind == 'income' else '−' -}}
+                {{ item.total_cents | money(wallet.currency) -}}
+              </strong>
+            </summary>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Produkt</th><th>Kategoria</th><th class="num">Ilość</th><th class="num">Cena</th><th class="num">Wartość</th></tr>
+                </thead>
+                <tbody>
+                  {% for product in entry['products'] %}
+                    <tr>
+                      <td>{{ product.name }}</td>
+                      <td class="muted">{{ product.category_name or 'Bez kategorii' }}</td>
+                      <td class="num">{{ product.quantity_milli | quantity }}</td>
+                      <td class="num">{{ product.unit_price_cents | money }}</td>
+                      <td class="num">{{ product.total_cents | money }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="actions">
+              <a href="{{ url_for('transactions.edit', transaction_id=item.id) }}">Edytuj</a>
+              <form method="post" action="{{ url_for('transactions.delete', transaction_id=item.id) }}"
+                    data-confirm="Usunąć tę transakcję?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="link danger" type="submit">Usuń</button>
+              </form>
+            </div>
+          </details>
+        </li>
+      {% else %}
+        {% set outgoing = item.from_wallet_id == wallet.id %}
+        <li class="card transfer">
+          <details>
+            <summary>
+              <span class="muted date">{{ item.occurred_on }}</span>
+              <span class="description">
+                {{ item.description }}
+                <span class="muted">({{ '→ ' ~ item.to_name if outgoing else '← ' ~ item.from_name }})</span>
+              </span>
+              <strong>
+                {%- if outgoing -%}
+                  −{{ item.amount_from_cents | money(item.from_currency) }}
+                {%- else -%}
+                  +{{ item.amount_to_cents | money(item.to_currency) }}
+                {%- endif -%}
+              </strong>
+            </summary>
+            <div class="actions transfer-actions">
+              <span class="muted">Przelew nie liczy się do przychodów ani wydatków.</span>
+              <a href="{{ url_for('transfers.edit', transfer_id=item.id) }}">Edytuj</a>
+              <form method="post" action="{{ url_for('transfers.delete', transfer_id=item.id) }}"
+                    data-confirm="Usunąć ten przelew? Zmieni to saldo obu portfeli.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="link danger" type="submit">Usuń</button>
+              </form>
+            </div>
+          </details>
+        </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+{% elif filtered %}
+  <p class="card muted">Brak operacji w wybranym okresie.</p>
+{% else %}
+  <p class="card muted">Ten portfel nie ma jeszcze transakcji.</p>
+{% endif %}
+{% endblock %}
