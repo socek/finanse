@@ -17,14 +17,17 @@ _WALLET_WITH_BALANCE = """
                FROM transactions t
                JOIN products p ON p.transaction_id = t.id
                WHERE t.wallet_id = w.id
+                 AND (:as_of IS NULL OR t.occurred_on <= :as_of)
            ), 0)
            + COALESCE((
                SELECT SUM(amount_to_cents) FROM transfers
                WHERE to_wallet_id = w.id
+                 AND (:as_of IS NULL OR occurred_on <= :as_of)
            ), 0)
            - COALESCE((
                SELECT SUM(amount_from_cents) FROM transfers
                WHERE from_wallet_id = w.id
+                 AND (:as_of IS NULL OR occurred_on <= :as_of)
            ), 0) AS balance_cents
     FROM wallets w
 """
@@ -88,11 +91,16 @@ def _matches(entry, wallet_ids, filters):
 
 
 def get_wallet(db, wallet_id):
-    return db.execute(_WALLET_WITH_BALANCE + " WHERE w.id = ?", (wallet_id,)).fetchone()
+    return db.execute(
+        _WALLET_WITH_BALANCE + " WHERE w.id = :id", {"id": wallet_id, "as_of": None}
+    ).fetchone()
 
 
-def list_wallets(db):
-    return db.execute(_WALLET_WITH_BALANCE + " ORDER BY w.name").fetchall()
+def list_wallets(db, as_of=None):
+    """Portfele z saldem na koniec podanego dnia; bez daty uwzględnia wszystkie wpisy."""
+    return db.execute(
+        _WALLET_WITH_BALANCE + " ORDER BY w.name", {"as_of": as_of or None}
+    ).fetchall()
 
 
 def _parse(name, currency, initial_balance):

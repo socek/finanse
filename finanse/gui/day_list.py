@@ -173,6 +173,15 @@ class WalletList(QListWidget):
             self.setCurrentItem(current)
         self.blockSignals(False)
 
+    def set_labels(self, wallets, label):
+        """Zmienia same teksty, bez przebudowy listy i bez sygnału zaznaczenia."""
+        labels = {wallet["id"]: label(wallet) for wallet in wallets}
+        self.blockSignals(True)
+        for row in range(self.count()):
+            item = self.item(row)
+            item.setText(labels.get(item.data(KEY_ROLE), item.text()))
+        self.blockSignals(False)
+
     def current_id(self):
         item = self.currentItem()
         return item.data(KEY_ROLE) if item else None

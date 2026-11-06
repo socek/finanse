@@ -81,7 +81,7 @@ class WalletsTab(QWidget):
         actions.addStretch()
 
         self.filter_bar = FilterBar(db)
-        self.filter_bar.changed.connect(self.refresh_entries)
+        self.filter_bar.changed.connect(self._filters_changed)
 
         self.summary = common.plain_label()
         self.summary.setWordWrap(True)
@@ -147,16 +147,26 @@ class WalletsTab(QWidget):
         """Portfel podświetlony na liście, którego dotyczą działania z menu."""
         return self.wallet_list.current_id()
 
+    def _balance_date(self):
+        """Salda odpowiadają końcowi filtrowanego okresu, czyli dacie „Do”."""
+        return self.filter_bar.state()[1]
+
+    @staticmethod
+    def _wallet_label(wallet):
+        balance = format_money(wallet["balance_cents"], wallet["currency"])
+        return f"{wallet['name']}\n{balance}"
+
     def refresh(self, select=None):
         self.wallet_list.fill(
-            list_wallets(self.db),
-            lambda wallet: (
-                f"{wallet['name']}\n"
-                f"{format_money(wallet['balance_cents'], wallet['currency'])}"
-            ),
-            select,
+            list_wallets(self.db, self._balance_date()), self._wallet_label, select
         )
         self.filter_bar.refresh_categories()
+        self._selection_changed()
+
+    def _filters_changed(self):
+        self.wallet_list.set_labels(
+            list_wallets(self.db, self._balance_date()), self._wallet_label
+        )
         self._selection_changed()
 
     def _selection_changed(self):
@@ -164,7 +174,8 @@ class WalletsTab(QWidget):
         self.refresh_entries()
 
     def _update_header(self):
-        wallets = list_wallets(self.db)
+        balance_date = self._balance_date()
+        wallets = list_wallets(self.db, balance_date)
         checked = self.wallet_list.checked_ids()
         for button in self.wallet_actions:
             button.setEnabled(bool(wallets))
@@ -176,7 +187,10 @@ class WalletsTab(QWidget):
                 totals[wallet["currency"]] = (
                     totals.get(wallet["currency"], 0) + wallet["balance_cents"]
                 )
-        self.balance.setText(format_totals(totals))
+        text = format_totals(totals)
+        self.balance.setText(
+            f"Saldo na {balance_date}: {text}" if text and balance_date else text
+        )
         negative = len(totals) == 1 and next(iter(totals.values())) < 0
         self.balance.setStyleSheet(
             f"color: {common.negative_color().name()}" if negative else ""

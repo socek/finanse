@@ -356,6 +356,26 @@ def test_invalid_value_saves_nothing(db, total):
     assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
 
 
+def test_balance_as_of_date_includes_that_day(db):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    other = create_wallet(db, "B", "PLN", "10")
+    add(db, wallet, ("X", "1", "20"), on="2026-10-10")
+    add(db, wallet, ("Y", "1", "5"), kind="income", on="2026-10-20")
+    add(db, wallet, ("Z", "1", "1"), on="2026-11-01")
+    create_transfer(db, wallet, other, "2026-10-15", "", "30")
+
+    def balances(as_of=None):
+        return {w["name"]: w["balance_cents"] for w in list_wallets(db, as_of)}
+
+    assert balances("2026-10-09") == {"A": 10000, "B": 1000}  # saldo początkowe
+    assert balances("2026-10-10") == {"A": 8000, "B": 1000}
+    assert balances("2026-10-15") == {"A": 5000, "B": 4000}  # przelew w obie strony
+    assert balances("2026-10-20") == {"A": 5500, "B": 4000}
+    assert balances() == balances("2026-12-31") == {"A": 5400, "B": 4000}
+    assert balances("") == balances()
+    assert get_wallet(db, wallet)["balance_cents"] == 5400
+
+
 def test_transfer_moves_money(db):
     source = create_wallet(db, "A", "PLN", "100")
     target = create_wallet(db, "B")

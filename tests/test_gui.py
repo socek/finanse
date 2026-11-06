@@ -747,6 +747,66 @@ def test_last_transaction_updates_after_change(db, errors):
     assert tab.last_transaction.text() == "Najnowsza transakcja: 2026-11-01"
 
 
+def _balance_wallets(db):
+    first = create_wallet(db, "A", "PLN", "100")
+    second = create_wallet(db, "B", "PLN", "50")
+    add(db, first, price="20", on="2026-10-10")
+    add(db, first, price="5", on="2026-11-01")
+    add(db, second, price="7", on="2026-11-02")
+    return first, second
+
+
+def test_wallet_values_follow_date_to_filter(db, errors):
+    first, second = _balance_wallets(db)
+    tab = WalletsTab(db)
+    assert _plain(tab.wallet_list.item(0).text()) == "A\n75,00 PLN"
+    assert _plain(tab.wallet_list.item(1).text()) == "B\n43,00 PLN"
+    assert _plain(tab.balance.text()) == "118,00 PLN"
+
+    tab.filter_bar.date_to.setDate(QDate(2026, 10, 31))
+    tab.filter_bar.use_to.setChecked(True)
+    assert _plain(tab.wallet_list.item(0).text()) == "A\n80,00 PLN"
+    assert _plain(tab.wallet_list.item(1).text()) == "B\n50,00 PLN"
+    assert _plain(tab.balance.text()) == "Saldo na 2026-10-31: 130,00 PLN"
+
+    tab.filter_bar.date_to.setDate(QDate(2026, 11, 1))
+    assert _plain(tab.wallet_list.item(0).text()) == "A\n75,00 PLN"
+    assert _plain(tab.balance.text()) == "Saldo na 2026-11-01: 125,00 PLN"
+
+    # Zaznaczenie liczy się razem z datą i przetrwa odświeżenie.
+    _check_wallet(tab, 1, False)
+    assert _plain(tab.balance.text()) == "Saldo na 2026-11-01: 75,00 PLN"
+    tab.refresh()
+    assert _plain(tab.wallet_list.item(0).text()) == "A\n75,00 PLN"
+    assert tab.wallet_list.checked_ids() == {first}
+    _check_wallet(tab, 1, True)
+
+    tab.filter_bar.clear()
+    assert _plain(tab.wallet_list.item(1).text()) == "B\n43,00 PLN"
+    assert _plain(tab.balance.text()) == "118,00 PLN"
+
+
+def test_other_filters_do_not_change_wallet_values(db, errors):
+    _balance_wallets(db)
+    tab = WalletsTab(db)
+    tab.filter_bar.date_from.setDate(QDate(2026, 11, 2))
+    tab.filter_bar.use_from.setChecked(True)  # samo „Od” nie określa końca okresu
+    tab.filter_bar.search.setText("nie ma takiego")
+    tab.filter_bar.amount_from.setText("999")
+    assert _plain(tab.balance.text()) == "118,00 PLN"
+    assert _plain(tab.wallet_list.item(0).text()) == "A\n75,00 PLN"
+
+
+def test_changing_filter_keeps_highlight_and_expanded_days(db, errors):
+    first, second = _balance_wallets(db)
+    tab = WalletsTab(db)
+    tab.wallet_list.setCurrentRow(1)
+    tab.filter_bar.date_to.setDate(QDate(2026, 11, 30))
+    tab.filter_bar.use_to.setChecked(True)
+    assert tab.wallet_id() == second
+    assert tab.wallet_list.checked_ids() == {first, second}
+
+
 def test_expand_and_collapse_all(db, errors):
     wallet = create_wallet(db, "A")
     add(db, wallet, on="2026-11-05")
