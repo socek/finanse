@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finanse"
+dynamic = ["version"]
+description = "Okienkowa aplikacja do spisywania finansów"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PySide6-Essentials>=6.8,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.gui-scripts]
+finanse = "finanse.__main__:main"
+
+[tool.setuptools]
+packages = ["finanse", "finanse.gui"]
+
+[tool.setuptools.dynamic]
+version = { attr = "finanse.__version__" }
+
+[tool.setuptools.package-data]
+finanse = ["CHANGELOG.md", "migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

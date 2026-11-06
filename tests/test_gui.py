@@ -1203,7 +1203,7 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 7
+    assert window.tabs.count() == 8
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None
@@ -1243,6 +1243,16 @@ def test_files_tab_lists_files_with_sums(db, errors, tmp_path):
     window.tabs.setCurrentWidget(window.wallets)
     window.tabs.setCurrentWidget(window.files)
     assert "plików: 4" in window.files.total.text()
+
+
+def test_about_tab_shows_version_and_changelog(db, errors):
+    window = MainWindow(db)
+    window.tabs.setCurrentWidget(window.about)
+    assert window.tabs.tabText(window.tabs.currentIndex()) == "O programie"
+    assert window.about.version.text() == "Wersja 0.1"
+    text = window.about.changelog.toPlainText()
+    assert "Historia zmian" in text and "0.1 (2026-11-06)" in text
+    assert window.about.changelog.isReadOnly()
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):

@@ -23,12 +23,12 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 
 ```sh
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python -m finanse
+.venv/bin/pip install -e .
+.venv/bin/finanse
 ```
 
 Baza powstaje przy pierwszym uruchomieniu jako `~/.finanse/finanse.db`. Inną bazę
-można wskazać argumentem: `.venv/bin/python -m finanse /sciezka/do/bazy.db`.
+można wskazać argumentem: `.venv/bin/finanse /sciezka/do/bazy.db`.
 
 Aby dodać aplikację do menu programów, zainstaluj plik `.desktop`. Trzeba to powtórzyć
 po przeniesieniu projektu, bo plik zawiera jego ścieżkę:
@@ -36,6 +36,11 @@ po przeniesieniu projektu, bo plik zawiera jego ścieżkę:
 ```sh
 sed "s|@PROJECT_DIR@|$PWD|g" finanse.desktop.in > ~/.local/share/applications/finanse.desktop
 ```
+
+## Wersja i historia zmian
+
+Wersja jest w `finanse/__init__.py`, a historia zmian w `finanse/CHANGELOG.md`.
+Obie widać w zakładce **O programie**. Nową wersję trzeba dopisać do historii zmian.
 
 ## Aktualizacja bazy
 
@@ -81,8 +86,8 @@ to wydatki, a dodatnie to przychody.
 ## Testy
 
 ```sh
-.venv/bin/pip install pytest
-.venv/bin/python -m pytest
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/pytest
 ```
 
 Testy okien działają bez ekranu, na platformie Qt `offscreen`.
