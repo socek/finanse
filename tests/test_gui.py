@@ -1,5 +1,6 @@
 import pytest
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog
 from test_csv_import import BANK_CSV
 
@@ -566,6 +567,114 @@ def test_value_works_in_recurring_dialog(db, errors):
     payment = PaymentDialog(db, get_wallet(db, 1), dialog.recurring_id)
     assert _cells(payment)[2].text() == "10,00"
     assert "10,00" in payment.total.text()
+
+
+def _press(widget, key=Qt.Key.Key_Return, modifier=Qt.KeyboardModifier.NoModifier):
+    QTest.keyClick(widget, key, modifier)
+
+
+def test_enter_adds_product_instead_of_saving(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _fill_product(dialog, 0, "Kawa")
+    _press(dialog.table.cellWidget(0, dialog.PRICE))
+    assert dialog.table.rowCount() == 2
+    assert dialog.focusWidget() is dialog.table.cellWidget(1, dialog.NAME)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    assert dialog.isVisible()
+
+    # Klawisz Enter z bloku numerycznego działa tak samo.
+    _fill_product(dialog, 1, "Ser")
+    _press(dialog.table.cellWidget(1, dialog.NAME), Qt.Key.Key_Enter, Qt.KeyboardModifier.KeypadModifier)
+    assert dialog.table.rowCount() == 3
+    dialog.close()
+
+
+def test_enter_works_from_every_field(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _fill_product(dialog, 0, "Kawa")
+    for widget, rows in (
+        (dialog.description, 2),
+        (dialog.occurred_on, 2),  # ostatni wiersz jest już pusty, więc nie ma kolejnego
+        (dialog.kind, 2),
+    ):
+        _press(widget)
+        assert dialog.table.rowCount() == rows
+        assert dialog.focusWidget() is dialog.table.cellWidget(1, dialog.NAME)
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    dialog.close()
+
+
+def test_enter_on_empty_row_only_moves_focus(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _press(dialog.description)
+    assert dialog.table.rowCount() == 1
+    assert dialog.focusWidget() is dialog.table.cellWidget(0, dialog.NAME)
+    dialog.close()
+
+
+@pytest.mark.parametrize("key", [Qt.Key.Key_Return, Qt.Key.Key_Enter])
+def test_shift_enter_saves_whole_transaction(db, errors, key):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _fill_product(dialog, 0, "Kawa")
+    _press(dialog.table.cellWidget(0, dialog.PRICE), key, Qt.KeyboardModifier.ShiftModifier)
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert get_transaction(db, dialog.transaction_id)["description"] == "Kawa"
+
+
+def test_shift_enter_with_errors_stays_open(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _press(dialog.description, modifier=Qt.KeyboardModifier.ShiftModifier)
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.isVisible()
+    assert errors
+    dialog.close()
+
+
+def test_enter_in_edit_payment_and_recurring_dialogs(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet)
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    edit.show()
+    _press(edit.description)
+    assert edit.table.rowCount() == 2
+    _press(edit.description, modifier=Qt.KeyboardModifier.ShiftModifier)
+    assert edit.result() == QDialog.DialogCode.Accepted
+
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="1")
+    payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
+    payment.show()
+    _press(payment.description, modifier=Qt.KeyboardModifier.ShiftModifier)
+    assert payment.result() == QDialog.DialogCode.Accepted
+    assert get_recurring(db, recurring)["remaining"] == 0
+
+    template = RecurringDialog(db)
+    template.show()
+    _press(template.description)
+    assert template.result() != QDialog.DialogCode.Accepted
+    assert template.isVisible()
+    template.close()
+
+
+def test_escape_still_closes_dialog(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    _press(dialog.description, Qt.Key.Key_Escape)
+    assert not dialog.isVisible()
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+
+def test_wallet_dialog_still_saves_on_enter(db, errors):
+    dialog = WalletDialog(db)
+    dialog.show()
+    dialog.name.setText("Nowy")
+    _press(dialog.name)
+    assert dialog.result() == QDialog.DialogCode.Accepted
 
 
 def test_saved_transaction_makes_its_wallet_visible(db, errors, monkeypatch):

@@ -133,13 +133,39 @@ class _ProductRowsMixin:
         for row in rows or [EMPTY_ROW]:
             self._add_row(row)
 
-        add = QPushButton("Dodaj produkt")
-        add.clicked.connect(lambda: self._add_row(EMPTY_ROW, focus=True))
+        add = QPushButton("Dodaj produkt (Enter)")
+        add.setAutoDefault(False)
+        add.clicked.connect(self._next_product)
         bottom = QHBoxLayout()
         bottom.addWidget(add)
         bottom.addStretch()
         bottom.addWidget(self.total)
         return bottom
+
+    def keyPressEvent(self, event):
+        """Enter przechodzi do kolejnego produktu, a Shift+Enter zapisuje całość."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            modifiers = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            if modifiers == Qt.KeyboardModifier.ShiftModifier:
+                self.accept()
+                return
+            if modifiers == Qt.KeyboardModifier.NoModifier:
+                self._next_product()
+                return
+        super().keyPressEvent(event)
+
+    def _next_product(self):
+        """Dodaje wiersz, a jeśli ostatni jest jeszcze pusty, tylko do niego przechodzi."""
+        last = self.table.rowCount() - 1
+        fields = [
+            self.table.cellWidget(last, column).text().strip()
+            for column in (self.NAME, self.PRICE, self.VALUE)
+        ]
+        quantity = self.table.cellWidget(last, self.QUANTITY).text().strip()
+        if any(fields) or quantity not in ("", "1"):
+            self._add_row(EMPTY_ROW, focus=True)
+        else:
+            self.table.cellWidget(last, self.NAME).setFocus()
 
     def _add_row(self, row, focus=False):
         index = self.table.rowCount()
@@ -290,7 +316,7 @@ DESCRIPTION_HINT = "np. Zakupy spożywcze"
 
 
 class TransactionDialog(_ProductRowsMixin, _SavingDialog):
-    ACCEPT_TEXT = "Zapisz"
+    ACCEPT_TEXT = "Zapisz (Shift+Enter)"
 
     def __init__(self, db, wallet, transaction_id=None, parent=None, initial=None):
         super().__init__(parent)
@@ -391,7 +417,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
 class PaymentDialog(TransactionDialog):
     """Zwykła transakcja wypełniona z szablonu; zapis zmniejsza też licznik."""
 
-    ACCEPT_TEXT = "Zapłać"
+    ACCEPT_TEXT = "Zapłać (Shift+Enter)"
 
     def __init__(self, db, wallet, recurring_id, parent=None):
         self.recurring_id = recurring_id
@@ -469,7 +495,7 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         layout.addWidget(hint)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
-        layout.addWidget(_buttons(self))
+        layout.addWidget(_buttons(self, "Zapisz (Shift+Enter)"))
         self.resize(760, 560)
         self.wallet.currentIndexChanged.connect(self._update_totals)
         self._update_totals()
