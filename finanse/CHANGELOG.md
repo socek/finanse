@@ -12,11 +12,9 @@ Pierwsza wersja aplikacji okienkowej.
 - Propozycja opisu z nazwy jedynego produktu.
 - Nowa transakcja pamięta ostatnią datę do zamknięcia aplikacji, a przycisk Dzisiaj
   i Ctrl+T ustawiają bieżący dzień.
-- Ctrl+N otwiera nową transakcję, Enter dodaje produkt, a Shift+Enter zapisuje całość.
 - Przelewy między portfelami, także w różnych walutach.
 - Transakcje cykliczne z opcjonalnymi produktami i licznikiem płatności.
 - Import wyciągów bankowych z plików CSV z ochroną przed duplikatami.
-- Nowa transakcja miga na liście przez 2 sekundy.
 - Usuwanie transakcji z menu pod prawym przyciskiem myszy i klawiszem Delete.
 
 ### Listy i raporty
@@ -26,9 +24,16 @@ Pierwsza wersja aplikacji okienkowej.
 - Salda portfeli na koniec dnia wybranego w filtrze „Do”.
 - Szukanie po nazwie oraz filtry po dacie, kategorii i kwocie.
 - Przyciski rozwijania i zwijania list.
-- Wyróżnienie pozycji bez kategorii bursztynowym tłem.
 - Raporty miesięczne z wybranych portfeli, z podziałem na kategorie i portfele
   oraz wykresem z 12 miesięcy.
+
+### Wygląd i obsługa
+
+- Zakładka Ustawienia z wyborem motywu: systemowy, jasny, ciemny, sepia lub kolorowy.
+- Skróty klawiszowe do większości działań, z możliwością zmiany w Ustawieniach.
+- W oknie transakcji Enter domyślnie dodaje produkt, a Shift+Enter zapisuje całość.
+- Nowa transakcja miga na liście przez 2 sekundy.
+- Wyróżnienie pozycji bez kategorii bursztynowym tłem.
 
 ### Dane
 
@@ -42,5 +47,3 @@ Pierwsza wersja aplikacji okienkowej.
 - Instalacja przez `pyproject.toml` i polecenie `finanse`.
 - Plik `.desktop` z wpisem w menu programów i klasą okna `finanse`.
 - Zakładka O programie z wersją i historią zmian.
-- Zakładka Ustawienia z wyborem motywu: systemowy, jasny, ciemny, sepia lub kolorowy.
-- Skróty klawiszowe do większości działań, z możliwością zmiany w Ustawieniach.
