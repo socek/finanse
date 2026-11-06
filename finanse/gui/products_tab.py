@@ -160,6 +160,11 @@ class ProductsTab(QWidget):
         )
         return item
 
+    def flash_transaction(self, transaction_id):
+        self.tree.flash(
+            lambda key: key[0] == "product" and key[2] == transaction_id
+        )
+
     def selected_transaction(self):
         """Rachunek zaznaczonego produktu; wiersz dnia żadnego nie wskazuje."""
         item = self.tree.currentItem()

@@ -16,6 +16,7 @@ Pierwsza wersja aplikacji okienkowej.
 - Przelewy między portfelami, także w różnych walutach.
 - Transakcje cykliczne z opcjonalnymi produktami i licznikiem płatności.
 - Import wyciągów bankowych z plików CSV z ochroną przed duplikatami.
+- Nowa transakcja miga na liście przez 2 sekundy.
 - Usuwanie transakcji z menu pod prawym przyciskiem myszy i klawiszem Delete.
 
 ### Listy i raporty

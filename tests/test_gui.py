@@ -1578,6 +1578,154 @@ def test_enter_on_today_button_does_not_save(db, errors):
     dialog.close()
 
 
+def _row_color(tree, item):
+    tree.viewport().repaint()
+    rect = tree.visualItemRect(item)
+    pixel = tree.viewport().grab().toImage().pixelColor(rect.right() - 5, rect.center().y())
+    return pixel.name()
+
+
+def _flash_key(tab, transaction_id):
+    return tab.tree.flash_match(("transaction", transaction_id))
+
+
+def _add_many_days(db, wallet, days=60):
+    for day in range(1, days + 1):
+        on = QDate(2026, 1, 1).addDays(day).toString("yyyy-MM-dd")
+        add(db, wallet, name=f"Dzień {day}", on=on)
+
+
+def test_new_transaction_flashes_for_two_seconds(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-10-01")
+    monkeypatch.setattr(TransactionDialog, "exec", _fill_new_transaction)
+    tab = WalletsTab(db)
+    transaction_id = tab.create_transaction()
+
+    tree = tab.tree
+    assert tree.flash_visible
+    assert tree.flash_timer.isActive() and tree.flash_timer.interval() == 250
+    assert _flash_key(tab, transaction_id)
+    assert not tree.flash_match(("transaction", transaction_id + 1))
+    assert not tree.flash_match(("day", "2026-11-05"))
+
+    # 8 faz po 250 ms: stan początkowy i 7 przełączeń, a potem koniec migania.
+    phases = [tree.flash_visible]
+    while tree.flash_timer.isActive():
+        tree._flash_tick()
+        if tree.flash_timer.isActive():
+            phases.append(tree.flash_visible)
+    assert phases == [True, False, True, False, True, False, True, False]
+    assert len(phases) * 250 == 2000
+    assert not tree.flash_visible
+
+
+def test_flash_really_changes_the_row_and_ends_on_its_own(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet, on="2026-10-01")
+    tab = WalletsTab(db)
+    tab.resize(1000, 600)
+    tab.show()
+    assert QTest.qWaitForWindowExposed(tab)
+    tree = tab.tree
+    row = tree.topLevelItem(0).child(0)
+    normal = _row_color(tree, row)
+
+    tree.flash(lambda key: key == ("transaction", transaction), duration=200, interval=50)
+    assert _row_color(tree, row) == tree.palette().color(QPalette.ColorRole.Highlight).name()
+    QTest.qWait(400)
+    assert not tree.flash_timer.isActive() and not tree.flash_visible
+    assert _row_color(tree, row) == normal
+    tab.close()
+
+
+def test_flash_expands_day_and_scrolls_to_transaction(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    _add_many_days(db, wallet)
+    tab = WalletsTab(db)
+    tab.resize(800, 400)
+    tab.show()
+    assert QTest.qWaitForWindowExposed(tab)
+    tab.collapse_all_button.click()
+
+    def exec_saving_old(dialog):
+        dialog.occurred_on.setDate(QDate(2026, 1, 3))
+        return _fill_new_transaction(dialog)
+
+    monkeypatch.setattr(TransactionDialog, "exec", exec_saving_old)
+    tab.create_transaction()
+    target = next(
+        tab.tree.topLevelItem(i)
+        for i in range(tab.tree.topLevelItemCount())
+        if tab.tree.topLevelItem(i).text(0) == "2026-01-03"
+    )
+    assert target.isExpanded()
+    row = next(
+        target.child(i) for i in range(target.childCount()) if target.child(i).text(1) == "Skrót"
+    )
+    assert tab.tree.viewport().rect().intersects(tab.tree.visualItemRect(row))
+    tab.tree.flash_timer.stop()
+    tab.close()
+
+
+def test_flash_survives_refresh_and_keeps_stored_colors(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet, on="2026-10-01")
+    tab = WalletsTab(db)
+    tab.tree.flash(lambda key: key == ("transaction", transaction))
+    tab.refresh()
+    assert tab.tree.flash_visible and tab.tree.flash_timer.isActive()
+    assert _flash_key(tab, transaction)
+    # Bursztynowe tło braku kategorii zostaje zapisane w elemencie.
+    row = tab.tree.topLevelItem(0).child(0)
+    assert _is_warning(row, 3)
+    tab.tree.flash_timer.stop()
+
+
+def test_cancelled_or_filtered_out_transaction_does_not_flash(db, errors, monkeypatch):
+    create_wallet(db, "A")
+    tab = WalletsTab(db)
+    monkeypatch.setattr(TransactionDialog, "exec", lambda _dialog: 0)
+    assert tab.create_transaction() is None
+    assert not tab.tree.flash_timer.isActive()
+
+    monkeypatch.setattr(TransactionDialog, "exec", _fill_new_transaction)
+    tab.filter_bar.search.setText("nie ma takiego")
+    assert tab.create_transaction() is not None
+    assert not tab.tree.flash_timer.isActive() and not tab.tree.flash_visible
+
+
+def test_editing_transaction_does_not_flash(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-10-01")
+    tab = WalletsTab(db)
+    monkeypatch.setattr(TransactionDialog, "exec", lambda d: (d.accept(), d.result())[1])
+    tab.tree.setCurrentItem(tab.tree.topLevelItem(0).child(0))
+    tab.edit_entry()
+    assert not tab.tree.flash_timer.isActive()
+
+
+def test_ctrl_n_flashes_in_visible_list(db, errors, monkeypatch):
+    create_wallet(db, "A")
+    monkeypatch.setattr(TransactionDialog, "exec", _fill_new_transaction)
+    window = MainWindow(db)
+
+    window.new_transaction()  # zakładka Portfele
+    assert window.wallets.tree.flash_timer.isActive()
+    window.wallets.tree.flash_timer.stop()
+
+    window.tabs.setCurrentWidget(window.products)
+    window.new_transaction()
+    products = window.products.tree
+    assert products.flash_timer.isActive()
+    transaction_id = db.execute("SELECT MAX(id) FROM transactions").fetchone()[0]
+    assert products.flash_match(("product", 999, transaction_id))
+    assert not products.flash_match(("product", 999, transaction_id - 1))
+    assert not products.flash_match(("day", "2026-11-05"))
+    products.flash_timer.stop()
+    window.wallets.tree.flash_timer.stop()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:

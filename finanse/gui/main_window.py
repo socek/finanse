@@ -44,5 +44,11 @@ class MainWindow(QMainWindow):
 
     def new_transaction(self):
         """Działa z każdej zakładki, a po zapisie odświeża tę, która jest widoczna."""
-        self.wallets.create_transaction()
-        self.tabs.currentWidget().refresh()
+        transaction_id = self.wallets.create_transaction()
+        current = self.tabs.currentWidget()
+        # Lista transakcji jest już odświeżona, a ponowne odświeżenie cofnęłoby jej widok
+        # do góry i ukryło migający wiersz.
+        if current is not self.wallets:
+            current.refresh()
+        if transaction_id is not None and current is self.products:
+            self.products.flash_transaction(transaction_id)

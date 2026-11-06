@@ -1,7 +1,7 @@
 """Części wspólne list według dni: filtry oraz drzewo dni z pozycjami."""
 
-from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QDate, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStyledItemDelegate,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -24,6 +25,8 @@ from . import common
 
 KEY_ROLE = Qt.ItemDataRole.UserRole
 RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+FLASH_DURATION_MS = 2000
+FLASH_INTERVAL_MS = 250
 
 
 class FilterBar(QWidget):
@@ -261,6 +264,21 @@ def last_transaction_text(db, wallet_ids):
     return f"Najnowsza transakcja: {date}" if date else "Brak transakcji"
 
 
+class _FlashDelegate(QStyledItemDelegate):
+    """Maluje migający wiersz, nie zmieniając kolorów zapisanych w elementach drzewa."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        tree = self.parent()
+        key = index.siblingAtColumn(0).data(KEY_ROLE)
+        if tree.flash_visible and key is not None and tree.flash_match(key):
+            palette = tree.palette()
+            option.backgroundBrush = palette.brush(QPalette.ColorRole.Highlight)
+            option.palette.setBrush(
+                QPalette.ColorRole.Text, palette.brush(QPalette.ColorRole.HighlightedText)
+            )
+
+
 class DayTree(QTreeWidget):
     """Drzewo: dzień z sumami, a po rozwinięciu jego pozycje.
 
@@ -286,6 +304,40 @@ class DayTree(QTreeWidget):
             )
         self.scope = None
         self.collapsed_before_filtering = None
+        self.flash_match = lambda _key: False
+        self.flash_visible = False
+        self.flash_ticks_left = 0
+        self.flash_timer = QTimer(self)
+        self.flash_timer.timeout.connect(self._flash_tick)
+        self.setItemDelegate(_FlashDelegate(self))
+
+    def flash(self, match, duration=FLASH_DURATION_MS, interval=FLASH_INTERVAL_MS):
+        """Miga wierszami o pasującym kluczu i pokazuje pierwszy z nich.
+
+        Sprawdzany jest klucz, a nie element, bo odświeżenie listy tworzy elementy na nowo.
+        Wiersz ukryty przez filtry nie miga.
+        """
+        for day_index in range(self.topLevelItemCount()):
+            day = self.topLevelItem(day_index)
+            for index in range(day.childCount()):
+                if match(day.child(index).data(0, KEY_ROLE)):
+                    day.setExpanded(True)
+                    self.scrollToItem(day.child(index))
+                    self.flash_match = match
+                    self.flash_visible = True
+                    self.flash_ticks_left = max(duration // interval - 1, 0)
+                    self.flash_timer.start(interval)
+                    self.viewport().update()
+                    return
+
+    def _flash_tick(self):
+        if self.flash_ticks_left <= 0:
+            self.flash_timer.stop()
+            self.flash_visible = False
+        else:
+            self.flash_ticks_left -= 1
+            self.flash_visible = not self.flash_visible
+        self.viewport().update()
 
     def fill(self, scope, days, make_rows, label, filtering):
         """Buduje listę; `make_rows(day)` zwraca wiersze pozycji danego dnia."""

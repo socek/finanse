@@ -354,14 +354,19 @@ class WalletsTab(QWidget):
         self.refresh(select=-1)
 
     def create_transaction(self):
+        """Zwraca identyfikator dodanej transakcji albo None."""
         if self.wallet_id() is None:
             common.show_errors(self, ["Dodaj najpierw portfel."])
-            return
+            return None
         wallet = get_wallet(self.db, self.wallet_id())
         dialog = TransactionDialog(self.db, wallet, parent=self)
         if dialog.exec():
             self._show_wallets(dialog.selected_wallet_id())
             self.refresh()
+            key = ("transaction", dialog.transaction_id)
+            self.tree.flash(lambda candidate: candidate == key)
+            return dialog.transaction_id
+        return None
 
     def create_transfer(self):
         if len(list_wallets(self.db)) < 2:
