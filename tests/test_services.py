@@ -3,11 +3,13 @@ import pytest
 from finanse.categories import (
     create_category,
     delete_category,
+    deletion_block_reason,
     list_categories,
     rename_category,
 )
 from finanse.errors import ValidationError
 from finanse.products import group_products_by_day, load_products
+from finanse.recurring import create_recurring, delete_recurring
 from finanse.reports import axis_scale, build_report
 from finanse.transactions import (
     create_transaction,
@@ -166,8 +168,47 @@ def test_categories_create_rename_duplicate_delete(db):
     wallet = create_wallet(db, "A")
     add(db, wallet, ("Karma", "1", "5", category))
     assert next(c for c in list_categories(db) if c["name"] == "Koty")["product_count"] == 1
-    delete_category(db, category)
-    assert db.execute("SELECT category_id FROM products").fetchone()[0] is None
+
+
+def test_deletion_block_reason_names_only_real_uses():
+    assert deletion_block_reason(0, 0) == ""
+    assert "produkty: 3)" in deletion_block_reason(3, 0)
+    assert "cyklicznych" not in deletion_block_reason(3, 0)
+    assert "(produkty transakcji cyklicznych: 2)" in deletion_block_reason(0, 2)
+    assert "(produkty: 3, produkty transakcji cyklicznych: 2)" in deletion_block_reason(3, 2)
+
+
+def test_only_empty_category_can_be_deleted(db):
+    wallet = create_wallet(db, "A")
+    used = create_category(db, "Używana")
+    template = create_category(db, "W szablonie")
+    empty = create_category(db, "Pusta")
+    transaction = add(db, wallet, ("Karma", "1", "5", used), ("Kość", "1", "5", used))
+    recurring = create_recurring(db, wallet, "expense", "Media", rows=[
+        {"name": "Woda", "quantity": "1", "price": "1", "category": template},
+    ])  # fmt: skip
+    counts = {c["name"]: (c["product_count"], c["recurring_count"]) for c in list_categories(db)}
+    assert counts["Używana"] == (2, 0)
+    assert counts["W szablonie"] == (0, 1)
+    assert counts["Pusta"] == (0, 0)
+
+    with pytest.raises(ValidationError, match=r"używana \(produkty: 2\)"):
+        delete_category(db, used)
+    with pytest.raises(ValidationError, match=r"używana \(produkty transakcji cyklicznych: 1\)"):
+        delete_category(db, template)
+    names = {c["name"] for c in list_categories(db)}
+    assert {"Używana", "W szablonie"} <= names
+    assert db.execute("SELECT category_id FROM products").fetchone()[0] == used
+
+    delete_category(db, empty)
+    assert "Pusta" not in {c["name"] for c in list_categories(db)}
+
+    # Kategoria staje się pusta po usunięciu ostatniego użycia.
+    delete_transaction(db, transaction)
+    delete_category(db, used)
+    delete_recurring(db, recurring)
+    delete_category(db, template)
+    assert not {"Używana", "W szablonie"} & {c["name"] for c in list_categories(db)}
 
 
 def test_date_filter_and_summary(db):

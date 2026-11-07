@@ -8,10 +8,12 @@ MAX_NAME_LENGTH = 50
 def list_categories(db):
     return db.execute(
         """
-        SELECT c.id, c.name, COUNT(p.id) AS product_count
+        SELECT c.id, c.name,
+               (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id)
+                   AS product_count,
+               (SELECT COUNT(*) FROM recurring_products p WHERE p.category_id = c.id)
+                   AS recurring_count
         FROM categories c
-        LEFT JOIN products p ON p.category_id = c.id
-        GROUP BY c.id
         ORDER BY c.name
         """
     ).fetchall()
@@ -46,6 +48,29 @@ def rename_category(db, category_id, name):
         raise ValidationError("Masz już kategorię o tej nazwie.") from None
 
 
+def deletion_block_reason(product_count, recurring_count):
+    """Dlaczego kategorii nie można usunąć; pusty tekst, gdy można."""
+    uses = []
+    if product_count:
+        uses.append(f"produkty: {product_count}")
+    if recurring_count:
+        uses.append(f"produkty transakcji cyklicznych: {recurring_count}")
+    if not uses:
+        return ""
+    return f"Można usunąć tylko pustą kategorię, a ta jest używana ({', '.join(uses)})."
+
+
 def delete_category(db, category_id):
+    """Usuwa tylko pustą kategorię, żeby produkty nie traciły jej po cichu."""
+    used = db.execute(
+        """
+        SELECT (SELECT COUNT(*) FROM products WHERE category_id = :id),
+               (SELECT COUNT(*) FROM recurring_products WHERE category_id = :id)
+        """,
+        {"id": category_id},
+    ).fetchone()
+    reason = deletion_block_reason(used[0], used[1])
+    if reason:
+        raise ValidationError(reason)
     with db:
         db.execute("DELETE FROM categories WHERE id = ?", (category_id,))

@@ -2,7 +2,6 @@ import pytest
 
 from helpers import priced
 
-from finanse.categories import delete_category
 from finanse.errors import ValidationError
 from finanse.recurring import (
     create_recurring,
@@ -184,7 +183,8 @@ def test_wallet_and_category_deletion(db):
     wallet = create_wallet(db, "A")
     dom = category_id(db, "Dom")
     create_recurring(db, wallet, "expense", "Media", rows=[product(category=dom)])
-    delete_category(db, dom)
+    with db:  # z konsoli, bo aplikacja nie usunie używanej kategorii
+        db.execute("DELETE FROM categories WHERE id = ?", (dom,))
     assert db.execute("SELECT category_id FROM recurring_products").fetchone()[0] is None
     delete_wallet(db, wallet)
     assert list_recurring(db) == []

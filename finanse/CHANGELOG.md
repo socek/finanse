@@ -2,6 +2,7 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Usunąć można tylko pustą kategorię, bez produktów i produktów transakcji cyklicznych.
 - Transakcje cykliczne nie mają już własnej kwoty ani kategorii. Wyznaczają je produkty,
   a bez produktów podaje się je przy płatności.
 

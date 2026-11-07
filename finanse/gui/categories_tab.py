@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..categories import (
     create_category,
     delete_category,
+    deletion_block_reason,
     list_categories,
     rename_category,
 )
@@ -37,8 +38,8 @@ class CategoriesTab(QWidget):
         top.addWidget(self.new_name, 1)
         top.addWidget(add)
 
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Kategoria", "Produkty"])
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Kategoria", "Produkty", "W cyklicznych"])
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -78,12 +79,13 @@ class CategoriesTab(QWidget):
         for row, category in enumerate(categories):
             name = QTableWidgetItem(category["name"])
             name.setData(Qt.ItemDataRole.UserRole, category["id"])
-            count = QTableWidgetItem(str(category["product_count"]))
-            count.setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
             self.table.setItem(row, 0, name)
-            self.table.setItem(row, 1, count)
+            for column, key in ((1, "product_count"), (2, "recurring_count")):
+                count = QTableWidgetItem(str(category[key]))
+                count.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+                self.table.setItem(row, column, count)
         self.table.setCurrentCell(-1, -1)
         self.empty.setVisible(not categories)
         self._update_buttons()
@@ -95,10 +97,18 @@ class CategoriesTab(QWidget):
         item = self.table.item(row, 0)
         return item.data(Qt.ItemDataRole.UserRole), item.text()
 
+    def _block_reason(self, row):
+        return deletion_block_reason(
+            int(self.table.item(row, 1).text()), int(self.table.item(row, 2).text())
+        )
+
     def _update_buttons(self):
-        selected = self.table.currentRow() >= 0
+        row = self.table.currentRow()
+        selected = row >= 0
         self.rename_button.setEnabled(selected)
-        self.delete_button.setEnabled(selected)
+        reason = self._block_reason(row) if selected else "Zaznacz kategorię."
+        self.delete_button.setEnabled(not reason)
+        self.delete_button.setToolTip(reason)
 
     def add(self):
         try:
@@ -129,8 +139,10 @@ class CategoriesTab(QWidget):
         category_id, name = self._selected()
         if category_id is None:
             return
-        if common.confirm(
-            self, f"Usunąć kategorię „{name}”? Jej produkty trafią do „Bez kategorii”."
-        ):
+        # Klawisz działa też wtedy, gdy przycisk jest wyłączony, więc wyjaśniamy powód.
+        reason = self._block_reason(self.table.currentRow())
+        if reason:
+            common.show_errors(self, [reason])
+        elif common.confirm(self, f"Usunąć pustą kategorię „{name}”?"):
             delete_category(self.db, category_id)
             self.refresh()

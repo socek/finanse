@@ -6,7 +6,7 @@ import pytest
 
 from helpers import priced
 
-from finanse.categories import create_category, delete_category, rename_category
+from finanse.categories import create_category, rename_category
 from finanse.db import connect, init_db
 from finanse.history import history_text
 from finanse.recurring import create_recurring, pay_recurring, payment_draft
@@ -117,7 +117,9 @@ def test_category_delete_logs_set_null(db):
     wallet = create_wallet(db, "A")
     category = create_category(db, "Psy")
     add(db, wallet, product(category=category))
-    delete_category(db, category)
+    # Aplikacja nie usunie używanej kategorii, ale baza nadal chroni spójność, np. z konsoli.
+    with db:
+        db.execute("DELETE FROM categories WHERE id = ?", (category,))
     update = next(r for r in log(db) if r["action"] == "update")
     assert update["table_name"] == "products"
     assert json.loads(update["old_values"])["category_id"] == category

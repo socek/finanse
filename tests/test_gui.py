@@ -1,12 +1,13 @@
 import pytest
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QPalette
+from PySide6.QtCore import QDate, QEvent, Qt
+from PySide6.QtGui import QHelpEvent, QPalette
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QToolTip
 from helpers import priced
 from test_csv_import import BANK_CSV
 
 from finanse import __version__
+from finanse.categories import create_category
 from finanse.gui import common
 from finanse.gui.categories_tab import CategoriesTab
 from finanse.gui.dialogs import (
@@ -1728,6 +1729,86 @@ def test_ctrl_n_flashes_in_visible_list(db, errors, monkeypatch):
     assert not products.flash_match(("day", "2026-11-05"))
     products.flash_timer.stop()
     window.wallets.tree.flash_timer.stop()
+
+
+def test_categories_tab_deletes_only_empty(db, errors):
+    wallet = create_wallet(db, "A")
+    used = create_category(db, "Używana")
+    template = create_category(db, "W szablonie")
+    create_category(db, "Pusta")
+    create_transaction(
+        db, wallet, "expense", "2026-11-05", "Zakupy",
+        [{"name": "X", "quantity": "1", "price": "1", "category": used}],
+    )  # fmt: skip
+    create_recurring(db, wallet, "expense", "Media", rows=priced("Woda", "1", template))
+    tab = CategoriesTab(db)
+
+    def select(name):
+        row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 0).text() == name)
+        tab.table.setCurrentCell(row, 0)
+        return row
+
+    row = select("Używana")
+    assert (tab.table.item(row, 1).text(), tab.table.item(row, 2).text()) == ("1", "0")
+    assert not tab.delete_button.isEnabled() and tab.rename_button.isEnabled()
+    assert "pustą" in tab.delete_button.toolTip()
+    assert "(produkty: 1)" in tab.delete_button.toolTip()
+    tab.delete()  # np. klawiszem Delete
+    assert errors[0] == tab.delete_button.toolTip()
+    assert db.execute("SELECT COUNT(*) FROM categories WHERE id = ?", (used,)).fetchone()[0] == 1
+
+    errors.clear()
+    row = select("W szablonie")
+    assert tab.table.item(row, 2).text() == "1"
+    assert not tab.delete_button.isEnabled()
+    assert "(produkty transakcji cyklicznych: 1)" in tab.delete_button.toolTip()
+    tab.delete()
+    assert "cyklicznych: 1" in errors[0]
+
+    errors.clear()
+    select("Pusta")
+    assert tab.delete_button.isEnabled() and tab.delete_button.toolTip() == ""
+    tab.delete_button.click()
+    assert errors == []
+    names = [tab.table.item(r, 0).text() for r in range(tab.table.rowCount())]
+    assert "Pusta" not in names and "Używana" in names
+
+
+def test_disabled_delete_button_really_shows_tooltip(db, errors):
+    wallet = create_wallet(db, "A")
+    used = create_category(db, "Używana")
+    create_transaction(
+        db, wallet, "expense", "2026-11-05", "Zakupy",
+        [{"name": "X", "quantity": "1", "price": "1", "category": used}],
+    )  # fmt: skip
+    tab = CategoriesTab(db)
+    tab.show()
+    assert QTest.qWaitForWindowExposed(tab)
+    button = tab.delete_button
+    assert not button.isEnabled()
+    assert button.toolTip() == "Zaznacz kategorię."
+
+    row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 0).text() == "Używana")
+    tab.table.setCurrentCell(row, 0)
+    position = button.rect().center()
+    event = QHelpEvent(QEvent.Type.ToolTip, position, button.mapToGlobal(position))
+    QApplication.sendEvent(button, event)
+    assert QToolTip.isVisible()
+    assert QToolTip.text() == button.toolTip()
+    assert "(produkty: 1)" in QToolTip.text()
+    QToolTip.hideText()
+    tab.close()
+
+
+def test_declined_category_delete_keeps_it(db, errors, monkeypatch):
+    monkeypatch.setattr(common, "confirm", lambda *_a, **_k: False)
+    create_category(db, "Pusta")
+    tab = CategoriesTab(db)
+    rows = tab.table.rowCount()
+    row = next(r for r in range(rows) if tab.table.item(r, 0).text() == "Pusta")
+    tab.table.setCurrentCell(row, 0)
+    tab.delete()
+    assert tab.table.rowCount() == rows
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
