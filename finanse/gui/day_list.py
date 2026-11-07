@@ -314,6 +314,17 @@ class DayTree(QTreeWidget):
         self.flash_timer.timeout.connect(self._flash_tick)
         self.setItemDelegate(_FlashDelegate(self))
 
+    def drawBranches(self, painter, rect, index):
+        """Pole wcięcia należy do wiersza, więc dostaje jego tło."""
+        key = index.siblingAtColumn(0).data(KEY_ROLE)
+        if self.flash_visible and key is not None and self.flash_match(key):
+            painter.fillRect(rect, self.palette().brush(QPalette.ColorRole.Highlight))
+        else:
+            background = index.siblingAtColumn(0).data(Qt.ItemDataRole.BackgroundRole)
+            if background is not None:
+                painter.fillRect(rect, background)
+        super().drawBranches(painter, rect, index)
+
     def flash(self, match, duration=FLASH_DURATION_MS, interval=FLASH_INTERVAL_MS):
         """Miga wierszami o pasującym kluczu i pokazuje pierwszy z nich.
 

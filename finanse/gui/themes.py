@@ -62,6 +62,8 @@ THEMES = {
         "negative": "#a32a20",
         "income": "#1f66bd",
         "expense": "#b84a1c",
+        "income_row": "#e3ecd0",
+        "expense_row": "#f3dcc8",
     },
     "colorful": {
         "name": "Kolorowy",
@@ -83,6 +85,8 @@ THEMES = {
         "negative": "#b01c2e",
         "income": "#1565c0",
         "expense": "#d84315",
+        "income_row": "#d6f5df",
+        "expense_row": "#ffe0e6",
         # Paleta Qt nie obejmuje zakładek ani nagłówków tabel.
         "stylesheet": """
             QTabBar::tab {

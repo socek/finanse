@@ -146,7 +146,7 @@ class ProductsTab(QWidget):
         self.tree.fill(
             tuple(sorted(wallet_ids)),
             group_products_by_day(products),
-            lambda day: [self._product_item(p) for p in day["entries"]],
+            lambda day: [self._product_item(p, self.tree.columnCount()) for p in day["entries"]],
             "Produkty",
             filters.active,
         )
@@ -161,7 +161,7 @@ class ProductsTab(QWidget):
         self._update_buttons()
 
     @staticmethod
-    def _product_item(product):
+    def _product_item(product, column_count):
         income = product["kind"] == "income"
         value = format_money(product["total_cents"], product["currency"])
         item = QTreeWidgetItem(
@@ -177,6 +177,7 @@ class ProductsTab(QWidget):
             ]
         )
         item.setData(0, KEY_ROLE, ("product", product["id"], product["transaction_id"]))
+        common.mark_row_kind(item, income, column_count)
         common.mark_no_category(item, CATEGORY)
         for column in (QUANTITY, PRICE, VALUE):
             item.setTextAlignment(column, RIGHT)

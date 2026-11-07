@@ -1814,6 +1814,81 @@ def test_declined_category_delete_keeps_it(db, errors, monkeypatch):
     assert tab.table.rowCount() == rows
 
 
+def _kind_rows(db):
+    wallet = create_wallet(db, "A")
+    other = create_wallet(db, "B")
+    dom = db.execute("SELECT id FROM categories WHERE name = 'Dom'").fetchone()[0]
+    create_transaction(
+        db, wallet, "income", "2026-11-05", "Pensja",
+        [{"name": "Etat", "quantity": "1", "price": "100", "category": dom}],
+    )  # fmt: skip
+    create_transaction(
+        db, wallet, "expense", "2026-11-05", "Zakupy",
+        [{"name": "Chleb", "quantity": "1", "price": "5", "category": None}],
+    )  # fmt: skip
+    create_transfer(db, wallet, other, "2026-11-05", "", "1")
+
+
+def _rows_by_name(tree):
+    day = tree.topLevelItem(0)
+    return {day.child(i).text(1): day.child(i) for i in range(day.childCount())}
+
+
+def test_transaction_rows_differ_by_kind(db, errors):
+    _kind_rows(db)
+    tree = WalletsTab(db).tree
+    rows = _rows_by_name(tree)
+    income, expense = common.income_row_background(), common.expense_row_background()
+    for column in range(tree.columnCount()):
+        assert rows["Pensja"].background(column).color() == income
+    for column in (0, 1, 2, 4, 5, 6):
+        assert rows["Zakupy"].background(column).color() == expense
+    # Brak kategorii nadal wyróżnia swoją komórkę.
+    assert _is_warning(rows["Zakupy"], 3)
+    transfer = next(row for name, row in rows.items() if name.startswith("Przelew"))
+    assert transfer.background(1).style() == Qt.BrushStyle.NoBrush
+    day = tree.topLevelItem(0)
+    assert day.background(1).style() == Qt.BrushStyle.NoBrush
+
+
+def test_product_rows_differ_by_kind(db, errors):
+    _kind_rows(db)
+    tree = ProductsTab(db).tree
+    rows = _rows_by_name(tree)
+    for column in range(tree.columnCount()):
+        assert rows["Etat"].background(column).color() == common.income_row_background()
+    assert rows["Chleb"].background(1).color() == common.expense_row_background()
+    assert _is_warning(rows["Chleb"], 4)
+
+
+def test_row_background_is_really_painted_and_flash_covers_it(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = create_transaction(
+        db, wallet, "income", "2026-11-05", "Pensja",
+        [{"name": "Etat", "quantity": "1", "price": "100", "category": None}],
+    )  # fmt: skip
+    tab = WalletsTab(db)
+    tab.resize(1000, 600)
+    tab.show()
+    assert QTest.qWaitForWindowExposed(tab)
+    tree = tab.tree
+    row = tree.topLevelItem(0).child(0)
+    assert _row_color(tree, row) == common.income_row_background().name()
+
+    def indent_color():
+        tree.viewport().repaint()
+        y = tree.visualItemRect(row).center().y()
+        return tree.viewport().grab().toImage().pixelColor(3, y).name()
+
+    assert indent_color() == common.income_row_background().name()
+    tree.flash(lambda key: key == ("transaction", transaction))
+    highlight = tree.palette().color(QPalette.ColorRole.Highlight).name()
+    assert _row_color(tree, row) == highlight
+    assert indent_color() == highlight
+    tree.flash_timer.stop()
+    tab.close()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:

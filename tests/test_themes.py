@@ -62,6 +62,34 @@ def test_theme_colors_are_readable(qapp, key):  # kolory znaczeniowe także na t
         assert _contrast(color, QColor(theme[ROLE.Window])) >= 3, color.name()
 
 
+@pytest.mark.parametrize("key", [*THEMES, SYSTEM])
+def test_row_backgrounds_keep_text_readable_and_differ(qapp, key):
+    apply_theme(key)
+    palette = qapp.palette()
+    income, expense = common.income_row_background(), common.expense_row_background()
+    assert income != expense
+    text = palette.color(ROLE.Text)
+    for background in (income, expense):
+        assert _contrast(text, background) >= 4.5, background.name()
+    assert _contrast(common.positive_color(), income) >= 4.5
+    assert _contrast(common.negative_color(), expense) >= 4.5
+    # Tła nie zlewają się z bazową listą, ale pozostają delikatne.
+    assert income != palette.color(ROLE.Base) and expense != palette.color(ROLE.Base)
+
+
+def test_row_backgrounds_change_with_theme(db, qapp):
+    wallet = create_wallet(db, "A")
+    _spend(db, wallet)
+    window = MainWindow(db)
+    colors = set()
+    for key in THEMES:
+        _select(window, key)
+        row = window.wallets.tree.topLevelItem(0).child(0)
+        assert row.background(1).color() == common.expense_row_background()
+        colors.add(row.background(1).color().name())
+    assert len(colors) == len(THEMES)
+
+
 def test_apply_theme_changes_application_palette_and_style(qapp):
     original = qapp.palette().color(ROLE.Window)
     assert apply_theme("dark") == "dark"

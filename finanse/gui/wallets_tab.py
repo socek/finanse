@@ -276,6 +276,7 @@ class WalletsTab(QWidget):
             ]
         )
         item.setData(DATE, ENTRY_ROLE, ("transaction", transaction["id"]))
+        common.mark_row_kind(item, income, self.tree.columnCount())
         common.mark_no_category(item, CATEGORY)
         item.setTextAlignment(AMOUNT, RIGHT)
         item.setForeground(

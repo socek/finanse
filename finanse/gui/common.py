@@ -74,6 +74,21 @@ def negative_color():
     return _themed("negative", "#b3362b", "#f0857a")
 
 
+def income_row_background():
+    return _themed("income_row", "#e6f4ea", "#1c3327")
+
+
+def expense_row_background():
+    return _themed("expense_row", "#fbeaea", "#3a2023")
+
+
+def mark_row_kind(item, income, column_count):
+    """Barwi cały wiersz według rodzaju; później można wyróżnić w nim pojedynczą komórkę."""
+    color = income_row_background() if income else expense_row_background()
+    for column in range(column_count):
+        item.setBackground(column, color)
+
+
 def warning_background():
     """Tło tego, co jest dozwolone, ale niezalecane; takie samo w obu motywach."""
     return QColor("#f5b83d")

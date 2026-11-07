@@ -2,6 +2,7 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Wydatki i przychody mają inne tło wiersza na listach transakcji i produktów.
 - Skróty klawiszowe są pokazywane w podpowiedziach przycisków, a nie w ich nazwach.
 - Usunąć można tylko pustą kategorię, bez produktów i produktów transakcji cyklicznych.
 - Transakcje cykliczne nie mają już własnej kwoty ani kategorii. Wyznaczają je produkty,
