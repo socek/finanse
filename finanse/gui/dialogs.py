@@ -108,6 +108,23 @@ class WalletDialog(_SavingDialog):
             update_wallet(self.db, self.wallet_id, *values)
 
 
+MINUS_SIGNS = "-−–—"  # zwykły minus oraz znaki, które wklejają się np. z wyciągów
+
+
+def _remove_minus(field):
+    """Ilość, cena i wartość są dodatnie, a rodzaj transakcji wybiera się osobno."""
+    text = field.text()
+    if not any(sign in text for sign in MINUS_SIGNS):
+        return
+    cursor = field.cursorPosition()
+    before_cursor = text[:cursor]
+    for sign in MINUS_SIGNS:
+        text = text.replace(sign, "")
+        before_cursor = before_cursor.replace(sign, "")
+    field.setText(text)
+    field.setCursorPosition(len(before_cursor))
+
+
 class _ProductRowsMixin:
     """Tabela produktów z sumą, wspólna dla transakcji i transakcji cyklicznych."""
 
@@ -194,6 +211,8 @@ class _ProductRowsMixin:
         remove.setText("Usuń")
         remove.clicked.connect(lambda: self._remove_row(remove))
 
+        for field in (quantity, price, value):
+            field.textEdited.connect(lambda _text, edited=field: _remove_minus(edited))
         name.textChanged.connect(self._update_totals)
         quantity.textChanged.connect(lambda: self._quantity_edited(quantity, price, value))
         price.textChanged.connect(lambda: self._price_edited(quantity, price, value))

@@ -4,6 +4,7 @@
 
 - Kategorię produktu można wpisać z klawiatury, z przybliżonym wyszukiwaniem. Wejście na
   pole zaznacza jego tekst, więc pisanie zaczyna się od zera.
+- Minus wpisany lub wklejony w ilość, cenę albo wartość produktu jest usuwany.
 - Okno nowej transakcji otwiera się z kursorem w nazwie pierwszego produktu.
 - Wydatki i przychody mają inne tło wiersza na listach transakcji i produktów.
 - Skróty klawiszowe są pokazywane w podpowiedziach przycisków, a nie w ich nazwach.

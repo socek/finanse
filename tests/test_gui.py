@@ -2155,6 +2155,93 @@ def test_fuzzy_category_works_in_edit_and_recurring_dialogs(db, errors):
     assert template.table.cellWidget(0, template.CATEGORY).isEditable()
 
 
+@pytest.mark.parametrize("column", ["QUANTITY", "PRICE", "VALUE"])
+def test_typed_minus_is_removed(db, errors, column):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    field = dialog.table.cellWidget(0, getattr(dialog, column))
+    field.setFocus()
+    field.clear()
+    QTest.keyClicks(field, "-12,50")
+    assert field.text() == "12,50"
+    assert field.cursorPosition() == 5
+    QTest.keyClick(field, Qt.Key.Key_Home)
+    QTest.keyClick(field, Qt.Key.Key_Minus)
+    assert field.text() == "12,50"
+    assert field.cursorPosition() == 0
+    dialog.close()
+
+
+@pytest.mark.parametrize("sign", ["-", "−", "–", "—"])
+@pytest.mark.parametrize("column", ["QUANTITY", "PRICE", "VALUE"])
+def test_pasted_minus_is_removed(db, errors, column, sign):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    field = dialog.table.cellWidget(0, getattr(dialog, column))
+    field.clear()
+    QApplication.clipboard().setText(f"{sign}1 435,02")
+    field.paste()
+    assert field.text() == "1 435,02"
+    dialog.close()
+
+
+def test_cursor_stays_in_place_after_removing_minus(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    field = dialog.table.cellWidget(0, dialog.PRICE)
+    field.setText("12")
+    field.setCursorPosition(1)
+    QTest.keyClick(field, Qt.Key.Key_Minus)
+    assert field.text() == "12"
+    assert field.cursorPosition() == 1
+    QTest.keyClick(field, Qt.Key.Key_3)
+    assert field.text() == "132"
+    dialog.close()
+
+
+def test_calculations_use_value_without_minus(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    quantity, price, value = _cells(dialog)
+    quantity.clear()
+    QTest.keyClicks(quantity, "-2")
+    QTest.keyClicks(price, "-5")
+    assert (quantity.text(), price.text(), value.text()) == ("2", "5", "10,00")
+    assert "10,00" in dialog.total.text()
+
+    value.clear()
+    QTest.keyClicks(value, "-30")
+    assert value.text() == "30"
+    assert price.text() == "15,00"
+
+    dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    row = db.execute("SELECT quantity_milli, unit_price_cents, total_cents FROM products").fetchone()
+    assert tuple(row) == (2000, 1500, 3000)
+
+
+def test_minus_stays_in_product_name_and_description(db, errors):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    name = dialog.table.cellWidget(0, dialog.NAME)
+    QTest.keyClicks(name, "Coca-Cola")
+    QTest.keyClicks(dialog.description, "a-b")
+    assert name.text() == "Coca-Cola"
+    assert dialog.description.text() == "a-b"
+    dialog.close()
+
+
+def test_minus_is_removed_in_recurring_dialog_too(db, errors):
+    create_wallet(db, "A")
+    dialog = RecurringDialog(db)
+    dialog.show()
+    field = dialog.table.cellWidget(0, dialog.PRICE)
+    QTest.keyClicks(field, "-5")
+    assert field.text() == "5"
+    dialog.close()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:
