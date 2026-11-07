@@ -26,7 +26,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   bilans, rozbicie na portfele, podział na kategorie i wykres według miesięcy lub lat
 - miesięczne budżety kategorii, osobno dla każdej waluty, z paskiem wykorzystania
   w raporcie
-- import wyciągów bankowych z plików CSV z ochroną przed duplikatami
+- import wyciągów bankowych z plików CSV z ochroną przed duplikatami i regułami, które
+  nadają kategorię, nazwę produktu i tagi według opisu
 - historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
@@ -98,6 +99,15 @@ kodowanie, separator i kolumny, a przed zapisem pokazuje podgląd, w którym mo�
 to poprawić. Każdy wiersz staje się transakcją z jednym produktem: kwoty ujemne
 to wydatki, a dodatnie to przychody.
 
+Reguły importu (**Plik → Reguły importu** albo przycisk w oknie importu) nadają transakcji
+kategorię, nazwę produktu i tagi, gdy opis z wyciągu zawiera tekst reguły. Wielkość liter,
+polskie znaki i nadmiarowe spacje nie mają znaczenia, więc „Żabka” pasuje do „ZABKA 1234
+KRAKOW”. Reguła może dotyczyć tylko wydatków albo tylko przychodów. Wygrywa pierwsza pasująca
+reguła z listy, a kolejność można zmieniać. Wiersz bez reguły, albo z regułą bez kategorii,
+dostaje kategorię wybraną w oknie importu. Podgląd pokazuje kategorię każdego wiersza,
+a dwuklik w wiersz tworzy regułę z jego opisu. Reguły działają tylko przy imporcie i nie
+zmieniają transakcji już zapisanych.
+
 - Plik musi mieć jedną kolumnę kwoty ze znakiem. Układ z osobnymi kolumnami
   obciążeń i uznań nie jest obsługiwany.
 - Daty w formacie liczbowym są czytane jako dzień przed miesiącem.
@@ -126,6 +136,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
 - `budgets` – miesięczne limity wydatków kategorii w danej walucie
 - `tags`, `transaction_tags` – tagi i ich przypisanie do transakcji
+- `import_rules` – reguły importu wyciągów
 - `operations`, `change_log` – dziennik zmian
 
 W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto

@@ -7,7 +7,9 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHeaderView,
+    QHBoxLayout,
     QLabel,
+    QPushButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -20,6 +22,7 @@ from ..csv_import import DELIMITERS, detect_mapping
 from ..errors import ValidationError
 from ..money import format_money
 from . import common
+from .import_rules_dialog import RuleDialog, RulesDialog
 
 PREVIEW_ROWS = 20
 
@@ -54,11 +57,21 @@ class ImportDialog(QDialog):
         form.addRow("Kolumna daty", self.date_column)
         form.addRow("Kolumna opisu", self.description_column)
         form.addRow("Kolumna kwoty", self.amount_column)
-        form.addRow("Kategoria dla wszystkich", self.category)
+        self.rules_button = QPushButton("Reguły importu…")
+        self.rules_button.setAutoDefault(False)
+        self.rules_button.clicked.connect(self.edit_rules)
+        category_row = QHBoxLayout()
+        category_row.addWidget(self.category, 1)
+        category_row.addWidget(self.rules_button)
+        form.addRow("Kategoria bez reguły", category_row)
 
         self.counts = QLabel()
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Wiersz", "Data", "Opis", "Kwota", "Status"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Wiersz", "Data", "Opis", "Kwota", "Kategoria", "Status"]
+        )
+        self.table.setToolTip("Dwuklik w wiersz tworzy regułę z jego opisu.")
+        self.table.itemDoubleClicked.connect(self._rule_from_row)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(
@@ -79,12 +92,17 @@ class ImportDialog(QDialog):
         layout.addWidget(self.counts)
         layout.addWidget(self.table, 1)
         layout.addWidget(self.hint)
+        layout.addWidget(
+            QLabel("Dwuklik w wiersz tworzy regułę z jego opisu; ✓ oznacza wiersz z regułą.")
+        )
         layout.addWidget(buttons)
         self.resize(820, 640)
 
         self.delimiter.currentIndexChanged.connect(self._reload_rows)
         self.start.valueChanged.connect(self._start_changed)
-        for combo in (self.date_column, self.description_column, self.amount_column):
+        for combo in (
+            self.date_column, self.description_column, self.amount_column, self.category,
+        ):  # fmt: skip
             combo.currentIndexChanged.connect(self._refresh_preview)
         self._reload_rows()
 
@@ -132,11 +150,16 @@ class ImportDialog(QDialog):
             self.hint.clear()
             self.import_button.setEnabled(False)
             return
-        records, counts = preview(self.db, self.wallet["id"], self.rows, mapping)
+        records, counts = preview(
+            self.db, self.wallet["id"], self.rows, mapping, self.category.currentData()
+        )
+        self.records = records
         self.counts.setText(
-            f"Nowe: {counts['new']} · duplikaty: {counts['duplicates']}"
+            f"Nowe: {counts['new']} (z regułą: {counts['matched']})"
+            f" · duplikaty: {counts['duplicates']}"
             f" · niepoprawne wiersze: {counts['invalid']}"
         )
+        names = {item["id"]: item["name"] for item in list_categories(self.db)}
         shown = records[:PREVIEW_ROWS]
         self.table.setRowCount(len(shown))
         for index, record in enumerate(shown):
@@ -148,11 +171,15 @@ class ImportDialog(QDialog):
                 status = "Duplikat"
             else:
                 status = "Nowy"
+            category = (
+                "–" if record["error"] else names.get(record["category_id"], "Bez kategorii")
+            )
             cells = (
                 str(record["line"]),
                 record["occurred_on"] or "–",
                 record["description"],
                 amount,
+                category,
                 status,
             )
             for column, text in enumerate(cells):
@@ -162,16 +189,43 @@ class ImportDialog(QDialog):
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
                 self.table.setItem(index, column, item)
+            rule = record["rule"]
+            if rule:
+                details = [f"Reguła: „{rule['pattern']}”"]
+                if record["product_name"] != record["description"]:
+                    details.append(f"produkt: {record['product_name']}")
+                if record["tags"]:
+                    details.append(f"tagi: {', '.join(record['tags'])}")
+                self.table.item(index, 4).setToolTip(", ".join(details))
+                self.table.item(index, 4).setText(f"{category} ✓")
+            elif category == common.NO_CATEGORY_NAME:
+                common.mark_no_category_cell(self.table.item(index, 4))
         self.table.resizeColumnToContents(0)
         self.table.resizeColumnToContents(1)
         self.table.resizeColumnToContents(3)
         self.table.resizeColumnToContents(4)
+        self.table.resizeColumnToContents(5)
         self.hint.setText(
             f"Pokazano pierwsze {len(shown)} z {len(records)} wierszy."
             if len(records) > len(shown)
             else ""
         )
         self.import_button.setEnabled(counts["new"] > 0)
+
+    def edit_rules(self):
+        RulesDialog(self.db, parent=self).exec()
+        self._refresh_preview()
+
+    def _rule_from_row(self, item):
+        """Nowa reguła z opisu klikniętego wiersza; podgląd od razu ją uwzględnia."""
+        records = getattr(self, "records", [])
+        if item.row() >= len(records) or records[item.row()]["error"]:
+            return
+        record = records[item.row()]
+        if RuleDialog(
+            self.db, pattern=record["description"], kind=record["kind"], parent=self
+        ).exec():
+            self._refresh_preview()
 
     def accept(self):
         try:
@@ -190,6 +244,8 @@ class ImportDialog(QDialog):
     def summary(self):
         counts = self.result_counts
         lines = [f"Zaimportowano transakcje: {counts['imported']}."]
+        if counts["matched"]:
+            lines.append(f"Kategorię lub tagi z reguł dostały: {counts['matched']}.")
         if counts["duplicates"]:
             lines.append(f"Pominięte duplikaty: {counts['duplicates']}.")
         if counts["invalid"]:

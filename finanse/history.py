@@ -19,6 +19,7 @@ NOUNS = {
     "budgets": "budżet kategorii",
     "tags": "tag",
     "transaction_tags": "tag transakcji",
+    "import_rules": "regułę importu",
 }
 TITLE_FIELDS = {
     "wallets": "name",
@@ -31,6 +32,7 @@ TITLE_FIELDS = {
     "budgets": "category_id",
     "tags": "name",
     "transaction_tags": "tag_id",
+    "import_rules": "pattern",
 }
 # Tytuł z identyfikatora zamiast z tekstu, np. budżet nazywa się jak jego kategoria.
 TITLE_FORMATTERS = {
@@ -93,6 +95,10 @@ def _transaction(value, names):
     return f"„{description}”" if description else f"nr {value}"
 
 
+def _rule_kind(value, _names):
+    return {"expense": "wydatków", "income": "przychodów"}.get(value, value)
+
+
 def _wallet_type(value, _names):
     return {"vat": "z VAT", "plain": "zwykły"}.get(value, value)
 
@@ -145,6 +151,12 @@ FIELDS = {
         ("period_unit", "okres", _period_unit, "brak"),
     ),
     "recurring_products": _PRODUCT_FIELDS,
+    "import_rules": (
+        ("kind", "dotyczy", _rule_kind, "wydatków i przychodów"),
+        ("category_id", "kategoria", _category, "bez zmiany"),
+        ("product_name", "nazwa produktu", _text, "opis z wyciągu"),
+        ("tags", "tagi", lambda value, _names: value or "brak", "brak"),
+    ),
     "tags": (("name", "nazwa", _text, "brak"),),
     "transaction_tags": (("transaction_id", "transakcja", _transaction, "brak"),),
     "budgets": (

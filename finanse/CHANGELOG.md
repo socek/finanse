@@ -2,6 +2,10 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Reguły importu CSV: gdy opis z wyciągu zawiera tekst reguły, transakcja dostaje kategorię,
+  nazwę produktu i tagi. Dopasowanie pomija wielkość liter i polskie znaki, reguła może
+  dotyczyć tylko wydatków lub przychodów, a wygrywa pierwsza z listy. Podgląd importu pokazuje
+  kategorie, a dwuklik w wiersz tworzy regułę z jego opisu.
 - Pasek menu: Plik, Edycja, Widok, Portfel, Transakcja, Raport i Pomoc, z aktualnymi skrótami
   i wyszarzeniem działań bez zaznaczenia. Zostało pięć zakładek z danymi, a Historia, Pliki,
   Ustawienia i O programie otwierają się w osobnych oknach. Ustawienia mają skrót Ctrl+,,

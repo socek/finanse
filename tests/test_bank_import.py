@@ -25,19 +25,19 @@ def test_preview_does_not_save(db):
     wallet = create_wallet(db, "A")
     rows = safe_rows(BANK_CSV, ";")
     _, counts = preview(db, wallet, rows, detect_mapping(rows))
-    assert counts == {"new": 4, "duplicates": 0, "invalid": 1}
+    assert counts == {"new": 4, "duplicates": 0, "invalid": 1, "matched": 0}
     assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
 
 
 def test_import_updates_balance_and_skips_duplicates(db):
     wallet = create_wallet(db, "A")
-    assert run_import(db, wallet) == {"imported": 4, "duplicates": 0, "invalid": 1}
+    assert run_import(db, wallet) == {"imported": 4, "duplicates": 0, "invalid": 1, "matched": 0}
     assert get_wallet(db, wallet)["balance_cents"] == 500000 - 4550 - 440 - 440
-    assert run_import(db, wallet) == {"imported": 0, "duplicates": 4, "invalid": 1}
+    assert run_import(db, wallet) == {"imported": 0, "duplicates": 4, "invalid": 1, "matched": 0}
 
     rows = safe_rows(BANK_CSV, ";")
     _, counts = preview(db, wallet, rows, detect_mapping(rows))
-    assert counts == {"new": 0, "duplicates": 4, "invalid": 1}
+    assert counts == {"new": 0, "duplicates": 4, "invalid": 1, "matched": 0}
 
 
 def test_same_file_may_go_to_another_wallet(db):

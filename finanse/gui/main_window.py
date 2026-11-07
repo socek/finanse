@@ -20,6 +20,7 @@ from .about_tab import AboutTab
 from .categories_tab import CategoriesTab
 from .files_tab import FilesTab
 from .history_tab import HistoryTab
+from .import_rules_dialog import RulesDialog
 from .products_tab import ProductsTab
 from .recurring_tab import PAY, RecurringTab
 from .reports_tab import ReportsTab
@@ -169,6 +170,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self._item(file_menu, "Import CSV do portfela…", act["import_csv"], "import_csv",
                    self._has_wallet)  # fmt: skip
+        self._item(file_menu, "Reguły importu…", self.show_import_rules)
         file_menu.addSeparator()
         self._item(file_menu, "Kopie i pliki danych…", self.files_dialog.open_page)
         file_menu.addSeparator()
@@ -339,6 +341,9 @@ class MainWindow(QMainWindow):
     def show_forecast(self):
         self.tabs.setCurrentWidget(self.wallets)
         self.wallets.show_forecast()
+
+    def show_import_rules(self):
+        RulesDialog(self.db, parent=self).exec()
 
     def show_shortcuts(self):
         ShortcutsDialog(self).exec()
