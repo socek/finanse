@@ -2,6 +2,9 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Tagi transakcji niezależne od kategorii, np. „Wakacje 2026” albo „Remont”: pole z podpowiedziami
+  w oknie transakcji, tagi przy opisie na liście, filtr po tagu, sekcja „Według tagów” w raporcie
+  oraz zmiana nazwy i usuwanie w zakładce Kategorie.
 - Duplikowanie transakcji w zakładkach Portfele i Produkty, przyciskiem, z menu pod prawym
   przyciskiem myszy i skrótem Ctrl+Shift+C. Kopia otwiera się jako nowa transakcja, w której
   przed zapisem można zmienić datę, portfel i produkty.

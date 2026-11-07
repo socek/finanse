@@ -17,6 +17,8 @@ NOUNS = {
     "recurring_transactions": "transakcję cykliczną",
     "recurring_products": "produkt transakcji cyklicznej",
     "budgets": "budżet kategorii",
+    "tags": "tag",
+    "transaction_tags": "tag transakcji",
 }
 TITLE_FIELDS = {
     "wallets": "name",
@@ -27,9 +29,14 @@ TITLE_FIELDS = {
     "recurring_transactions": "description",
     "recurring_products": "name",
     "budgets": "category_id",
+    "tags": "name",
+    "transaction_tags": "tag_id",
 }
 # Tytuł z identyfikatora zamiast z tekstu, np. budżet nazywa się jak jego kategoria.
-TITLE_FORMATTERS = {"budgets": lambda value, names: names["categories"].get(value, f"nr {value}")}
+TITLE_FORMATTERS = {
+    "budgets": lambda value, names: names["categories"].get(value, f"nr {value}"),
+    "transaction_tags": lambda value, names: names["tags"].get(value, f"nr {value}"),
+}
 # Produkty usuwane i dodawane na nowo przy zapisie rachunku nie są prawdziwą zmianą.
 REPLACED_ON_SAVE = ("products", "recurring_products")
 
@@ -79,6 +86,11 @@ def _period_unit(value, _names):
     return {"day": "dni", "week": "tygodnie", "month": "miesiące", "year": "lata"}.get(
         value, value
     )
+
+
+def _transaction(value, names):
+    description = names["transactions"].get(value)
+    return f"„{description}”" if description else f"nr {value}"
 
 
 def _wallet_type(value, _names):
@@ -133,6 +145,8 @@ FIELDS = {
         ("period_unit", "okres", _period_unit, "brak"),
     ),
     "recurring_products": _PRODUCT_FIELDS,
+    "tags": (("name", "nazwa", _text, "brak"),),
+    "transaction_tags": (("transaction_id", "transakcja", _transaction, "brak"),),
     "budgets": (
         ("category_id", "kategoria", _category, "brak"),
         ("currency", "waluta", _plain, "brak"),
@@ -142,17 +156,20 @@ FIELDS = {
 
 
 def _names(db):
-    """Nazwy portfeli i kategorii, także już usuniętych, które zna dziennik."""
-    names = {"wallets": {}, "categories": {}}
+    """Nazwy portfeli, kategorii, tagów i opisy transakcji, także usuniętych, z dziennika."""
+    columns = {"wallets": "name", "categories": "name", "tags": "name",
+               "transactions": "description"}  # fmt: skip
+    names = {table: {} for table in columns}
     for table, known in names.items():
+        column = columns[table]
         for row in db.execute(
             "SELECT row_id, COALESCE(new_values, old_values) AS row_values"
             " FROM change_log WHERE table_name = ? ORDER BY id",
             (table,),
         ):
-            known[row["row_id"]] = json.loads(row["row_values"])["name"]
-        for row in db.execute(f"SELECT id, name FROM {table}"):
-            known[row["id"]] = row["name"]
+            known[row["row_id"]] = json.loads(row["row_values"]).get(column)
+        for row in db.execute(f"SELECT id, {column} FROM {table}"):
+            known[row["id"]] = row[column]
     return names
 
 

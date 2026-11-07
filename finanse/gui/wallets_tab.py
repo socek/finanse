@@ -315,10 +315,13 @@ class WalletsTab(QWidget):
         transaction = entry["item"]
         income = transaction["kind"] == "income"
         amount = format_money(transaction["total_cents"], transaction["currency"])
+        description = transaction["description"]
+        if entry["tags"]:
+            description += "  · " + ", ".join(name for _id, name in entry["tags"])
         item = QTreeWidgetItem(
             [
                 "",
-                transaction["description"],
+                description,
                 transaction["wallet_name"],
                 self._categories(entry["products"]),
                 f"{'+' if income else '−'}{amount}",

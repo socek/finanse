@@ -359,6 +359,15 @@ class ReportsTab(QWidget):
         self.budgets_hint = QLabel()
         self.budgets_hint.setWordWrap(True)
 
+        self.tags_title = _section_title("Według tagów")
+        self.tags_table = QTableWidget(0, 5)
+        self.tags_table.setHorizontalHeaderLabels(
+            ["Tag", "Transakcje", "Przychody", "Wydatki", "Bilans"]
+        )
+        self.tags_table.verticalHeader().hide()
+        self.tags_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tags_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
         self.expenses_grid = QGridLayout()
         self.expenses_empty = QLabel("Brak wydatków w tym okresie.")
         self.incomes_title = _section_title("Przychody według kategorii")
@@ -417,6 +426,9 @@ class ReportsTab(QWidget):
         body_layout.addSpacing(12)
         body_layout.addWidget(self.incomes_title)
         body_layout.addLayout(self.incomes_grid)
+        body_layout.addSpacing(12)
+        body_layout.addWidget(self.tags_title)
+        body_layout.addWidget(self.tags_table)
         body_layout.addSpacing(12)
         self.trend_title = _section_title("")
         body_layout.addWidget(self.trend_title)
@@ -565,6 +577,7 @@ class ReportsTab(QWidget):
         self.net_label.setText(format_money(report["net_total"], currency))
 
         self._fill_budgets(report)
+        self._fill_tags(report)
         self.expenses_empty.setVisible(not report["expenses"])
         self._fill_bars(self.expenses_grid, report["expenses"], common.expense_series(), currency)
         self.incomes_title.setVisible(bool(report["incomes"]))
@@ -725,6 +738,30 @@ class ReportsTab(QWidget):
                     )
                 self.wallets_table.setItem(row, column, item)
         _fit_height(self.wallets_table)
+
+    def _fill_tags(self, report):
+        """Sekcja widoczna tylko wtedy, gdy w okresie są otagowane transakcje."""
+        tags = report["tags"]
+        self.tags_title.setVisible(bool(tags))
+        self.tags_table.setVisible(bool(tags))
+        currency = report["currency"]
+        self.tags_table.setRowCount(len(tags))
+        for row, tag in enumerate(tags):
+            cells = (
+                tag["name"],
+                str(tag["transactions"]),
+                format_money(tag["income"], currency),
+                format_money(tag["expense"], currency),
+                format_money(tag["net"], currency),
+            )
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if column:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                self.tags_table.setItem(row, column, item)
+        _fit_height(self.tags_table)
 
     def _fill_budgets(self, report):
         currency = report["currency"]

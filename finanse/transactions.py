@@ -11,6 +11,7 @@ from .money import (
     to_cents,
     vat_from_gross,
 )
+from .tags import parse_tags, set_transaction_tags, tags_of
 from .wallets import wallet_has_vat
 
 MAX_TEXT_LENGTH = 200
@@ -133,10 +134,21 @@ def insert_products(db, transaction_id, products):
     )
 
 
-def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
+def validate_tags(tags):
+    """Tagi jako tekst po przecinku albo lista nazw; None oznacza brak zmian."""
+    if tags is None:
+        return None
+    names, errors = parse_tags(tags if isinstance(tags, str) else ",".join(tags))
+    if errors:
+        raise ValidationError(errors)
+    return names
+
+
+def create_transaction(db, wallet_id, kind, occurred_on, description, rows, tags=None):
     occurred_on, description, products = validate_transaction(
         db, wallet_id, kind, occurred_on, description, rows
     )
+    tags = validate_tags(tags)
     with db:
         transaction_id = db.execute(
             "INSERT INTO transactions (wallet_id, kind, occurred_on, description)"
@@ -144,16 +156,20 @@ def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
             (wallet_id, kind, occurred_on, description),
         ).lastrowid
         insert_products(db, transaction_id, products)
+        if tags:
+            set_transaction_tags(db, transaction_id, tags)
     return transaction_id
 
 
-def update_transaction(db, transaction_id, kind, occurred_on, description, rows):
+def update_transaction(db, transaction_id, kind, occurred_on, description, rows, tags=None):
+    """`tags=None` zostawia tagi bez zmian, a pusta lista lub tekst je usuwa."""
     wallet_id = db.execute(
         "SELECT wallet_id FROM transactions WHERE id = ?", (transaction_id,)
     ).fetchone()["wallet_id"]
     occurred_on, description, products = validate_transaction(
         db, wallet_id, kind, occurred_on, description, rows
     )
+    tags = validate_tags(tags)
     with db:
         db.execute(
             "UPDATE transactions SET kind = ?, occurred_on = ?, description = ?"
@@ -162,6 +178,8 @@ def update_transaction(db, transaction_id, kind, occurred_on, description, rows)
         )
         db.execute("DELETE FROM products WHERE transaction_id = ?", (transaction_id,))
         insert_products(db, transaction_id, products)
+        if tags is not None:
+            set_transaction_tags(db, transaction_id, tags)
 
 
 def delete_transaction(db, transaction_id):
@@ -194,4 +212,5 @@ def get_transaction(db, transaction_id):
         "occurred_on": transaction["occurred_on"],
         "description": transaction["description"],
         "rows": rows,
+        "tags": tags_of(db, transaction_id),
     }

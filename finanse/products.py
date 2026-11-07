@@ -1,5 +1,6 @@
 """Lista produktów portfela, niezależna od tego, w jakim rachunku się znalazły."""
 
+from .tags import tags_by_transaction
 from .wallets import NO_CATEGORY, EntryFilters, add_to_totals
 
 
@@ -47,6 +48,13 @@ def load_products(db, wallet_ids, date_from="", date_to="", filters=EntryFilters
         args,
     ).fetchall()
     products = [row for row in rows if _matches(row, filters)]
+    if filters.tag is not None:
+        tags = tags_by_transaction(db, {row["transaction_id"] for row in products})
+        products = [
+            row
+            for row in products
+            if filters.tag in {tag_id for tag_id, _name in tags[row["transaction_id"]]}
+        ]
     summary = {"income": {}, "expense": {}}
     for product in products:
         add_to_totals(summary[product["kind"]], product["currency"], product["total_cents"])

@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from .budgets import budget_usage
 from .money import NBSP, format_money
+from .tags import tag_totals
 from .transactions import VAT_RATES
 from .wallets import VAT, list_wallets
 
@@ -468,4 +469,5 @@ def build_report(
         "vat": _vat_report(db, selected, first, after),
         "budget_months": budget_months(first, after),
         "budgets": _budgets(db, ids, first, after, currency),
+        "tags": tag_totals(db, ids, first.isoformat(), after.isoformat()),
     }

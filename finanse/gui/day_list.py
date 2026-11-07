@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..categories import list_categories
 from ..money import format_totals, parse_money
+from ..tags import list_tags
 from ..wallets import NO_CATEGORY, EntryFilters, last_transaction_date
 from . import common, shortcuts
 
@@ -61,6 +62,8 @@ class FilterBar(QWidget):
         self.search.setClearButtonEnabled(True)
         self.category = QComboBox()
         self.category.setMinimumWidth(170)
+        self.tag = QComboBox()
+        self.tag.setMinimumWidth(140)
         self.amount_from = QLineEdit()
         self.amount_from.setPlaceholderText("Kwota od")
         self.amount_from.setFixedWidth(90)
@@ -70,6 +73,7 @@ class FilterBar(QWidget):
         search_row = QHBoxLayout()
         search_row.addWidget(self.search, 1)
         search_row.addWidget(self.category)
+        search_row.addWidget(self.tag)
         search_row.addWidget(self.amount_from)
         search_row.addWidget(self.amount_to)
 
@@ -85,6 +89,7 @@ class FilterBar(QWidget):
         for line in (self.search, self.amount_from, self.amount_to):
             line.textChanged.connect(self.changed)
         self.category.currentIndexChanged.connect(self.changed)
+        self.tag.currentIndexChanged.connect(self.changed)
         self.refresh_categories()
 
     def refresh_categories(self):
@@ -99,12 +104,30 @@ class FilterBar(QWidget):
         common.color_no_category_item(self.category)
         self.category.setCurrentIndex(max(self.category.findData(selected), 0))
         self.category.blockSignals(False)
+        self.refresh_tags()
+
+    def refresh_tags(self):
+        """Lista tagów jest widoczna dopiero, gdy jakiś tag istnieje."""
+        selected = self.tag.currentData()
+        tags = list_tags(self.db)
+        self.tag.blockSignals(True)
+        self.tag.clear()
+        self.tag.addItem("Wszystkie tagi", None)
+        for tag in tags:
+            self.tag.addItem(tag["name"], tag["id"])
+        index = self.tag.findData(selected)
+        self.tag.setCurrentIndex(max(index, 0))
+        self.tag.blockSignals(False)
+        self.tag.setVisible(bool(tags))
+        if selected is not None and index < 0:
+            self.changed.emit()  # wybrany tag został usunięty
 
     def clear(self):
         self.use_from.setChecked(False)
         self.use_to.setChecked(False)
         self.search.clear()
         self.category.setCurrentIndex(0)
+        self.tag.setCurrentIndex(0)
         self.amount_from.clear()
         self.amount_to.clear()
 
@@ -132,7 +155,11 @@ class FilterBar(QWidget):
         if date_from and date_to and date_from > date_to:
             notes.append("Data „Od” nie może być późniejsza niż „Do”.")
         filters = EntryFilters(
-            self.search.text(), self.category.currentData(), min_cents, max_cents
+            self.search.text(),
+            self.category.currentData(),
+            min_cents,
+            max_cents,
+            self.tag.currentData(),
         )
         return date_from, date_to, filters, notes
 

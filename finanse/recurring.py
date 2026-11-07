@@ -6,10 +6,12 @@ from datetime import date, timedelta
 
 from .errors import ValidationError
 from .money import format_precise_input, format_quantity_input
+from .tags import set_transaction_tags
 from .transactions import (
     MAX_TEXT_LENGTH,
     insert_products,
     parse_product_rows,
+    validate_tags,
     validate_transaction,
 )
 from .wallets import wallet_has_vat
@@ -338,7 +340,7 @@ def payment_draft(db, recurring_id):
     }
 
 
-def pay_recurring(db, recurring_id, kind, occurred_on, description, rows):
+def pay_recurring(db, recurring_id, kind, occurred_on, description, rows, tags=None):
     """Tworzy zwykłą transakcję, zmniejsza licznik i przesuwa termin o jeden okres.
 
     Termin liczy się od poprzedniego terminu, a nie od daty płatności, więc spóźniona
@@ -354,6 +356,7 @@ def pay_recurring(db, recurring_id, kind, occurred_on, description, rows):
     occurred_on, description, products = validate_transaction(
         db, recurring["wallet_id"], kind, occurred_on, description, rows
     )
+    tags = validate_tags(tags)
     with db:
         transaction_id = db.execute(
             "INSERT INTO transactions (wallet_id, kind, occurred_on, description)"
@@ -361,6 +364,8 @@ def pay_recurring(db, recurring_id, kind, occurred_on, description, rows):
             (recurring["wallet_id"], kind, occurred_on, description),
         ).lastrowid
         insert_products(db, transaction_id, products)
+        if tags:
+            set_transaction_tags(db, transaction_id, tags)
         db.execute(
             """
             UPDATE recurring_transactions

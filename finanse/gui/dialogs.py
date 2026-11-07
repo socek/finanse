@@ -57,6 +57,7 @@ from ..transfers import create_transfer, get_transfer, update_transfer
 from ..wallets import PLAIN, VAT, create_wallet, get_wallet, list_wallets, update_wallet
 from . import common, shortcuts
 from .category_combo import CategoryCombo
+from .tags_edit import TagsEdit
 
 
 def _buttons(dialog, accept_text="Zapisz", shortcut=None):
@@ -562,6 +563,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.description = QLineEdit(data["description"])
         self.description.setMaxLength(200)
         self.description.setPlaceholderText(DESCRIPTION_HINT)
+        self.tags = TagsEdit(db, data.get("tags", ()))
 
         top = QFormLayout()
         # Portfel wybiera się tylko przy nowej transakcji; płatność ma go z szablonu.
@@ -583,6 +585,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         top.addRow("Rodzaj", self.kind)
         top.addRow("Data", date_row)
         top.addRow("Opis", self.description)
+        top.addRow("Tagi", self.tags)
 
         bottom = self._product_section(data["rows"], list_categories(db))
 
@@ -642,6 +645,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
             common.iso_date(self.occurred_on),
             self.description.text().strip() or self.suggested_description(),
             self.rows(),
+            self.tags.text(),
         )
 
     def save(self):

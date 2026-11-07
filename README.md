@@ -12,6 +12,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   dni, z wielu wybranych portfeli naraz, z szukaniem po nazwie i filtrami po dacie,
   kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
+- tagi transakcji niezależne od kategorii, np. „Wakacje 2026”, z filtrem na listach
+  i podsumowaniem w raporcie
 - historia ceny produktu: najniższa, najwyższa i średnia cena, wykres oraz porównanie sklepów
 - podpowiedzi nazw produktów z historii, które uzupełniają kategorię, ostatnią cenę i stawkę VAT
 - przelewy między portfelami, także w różnych walutach
@@ -121,6 +123,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
 - `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
 - `budgets` – miesięczne limity wydatków kategorii w danej walucie
+- `tags`, `transaction_tags` – tagi i ich przypisanie do transakcji
 - `operations`, `change_log` – dziennik zmian
 
 W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto
@@ -162,6 +165,12 @@ Pole nazwy produktu podpowiada znane nazwy, od najczęściej używanych, po frag
 nazwy i bez względu na wielkość liter. Wybór nazwy albo wpisanie znanej uzupełnia puste
 pola z ostatniego użycia: kategorię, cenę z ostatniego zakupu w walucie portfela i, w portfelu
 z VAT, stawkę. Wpisanych już wartości podpowiedź nie zmienia.
+
+Tagi wpisuje się w oknie transakcji po przecinku, a nowy tag powstaje przy zapisie. Nazwy
+porównuje się bez wielkości liter, także polskich. Tag ma cała transakcja, nie pojedynczy
+produkt. Listy można filtrować po tagu, szukanie znajduje transakcje także po nazwie tagu,
+a raport pokazuje przychody, wydatki i bilans każdego tagu w okresie. Zmiana nazwy i usuwanie
+tagów są w zakładce **Kategorie**; usunięcie tagu nie usuwa transakcji.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

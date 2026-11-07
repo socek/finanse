@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .errors import ValidationError
 from .money import parse_money
+from .tags import tags_by_transaction
 
 MAX_NAME_LENGTH = 100
 PLAIN, VAT = "plain", "vat"
@@ -45,6 +46,7 @@ class EntryFilters:
     category: int | None = None  # None: wszystkie, NO_CATEGORY: bez kategorii
     min_cents: int | None = None
     max_cents: int | None = None
+    tag: int | None = None  # None: wszystkie, inaczej identyfikator tagu
 
     @property
     def active(self):
@@ -69,7 +71,11 @@ def _entry_amount(entry, wallet_ids):
 def _entry_names(entry):
     item = entry["item"]
     if entry["type"] == "transaction":
-        return [item["description"], *(p["name"] for p in entry["products"])]
+        return [
+            item["description"],
+            *(p["name"] for p in entry["products"]),
+            *(name for _id, name in entry["tags"]),
+        ]
     return [item["description"], item["from_name"], item["to_name"]]
 
 
@@ -79,6 +85,12 @@ def _matches(entry, wallet_ids, filters):
         return False
     if filters.max_cents is not None and amount > filters.max_cents:
         return False
+    if filters.tag is not None:
+        # Przelew nie ma tagów.
+        if entry["type"] != "transaction":
+            return False
+        if filters.tag not in {tag_id for tag_id, _name in entry["tags"]}:
+            return False
     if filters.category is not None:
         # Przelew nie ma kategorii, a rachunek pasuje, gdy pasuje choć jeden produkt.
         if entry["type"] != "transaction":
@@ -235,8 +247,14 @@ def load_entries(db, wallet_ids, date_from="", date_to="", filters=EntryFilters(
         (*wallet_ids, *wallet_ids, *period_args),
     ).fetchall()
 
+    tags = tags_by_transaction(db, (item["id"] for item in transactions))
     entries = [
-        {"type": "transaction", "item": item, "products": products[item["id"]]}
+        {
+            "type": "transaction",
+            "item": item,
+            "products": products[item["id"]],
+            "tags": tags[item["id"]],
+        }
         for item in transactions
     ] + [{"type": "transfer", "item": item} for item in transfers]
     entries.sort(

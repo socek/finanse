@@ -24,6 +24,7 @@ from ..errors import ValidationError
 from ..money import format_money
 from . import common, shortcuts
 from .dialogs import BudgetDialog
+from .tags_panel import TagsPanel
 
 BUDGET = 3
 
@@ -80,11 +81,15 @@ class CategoriesTab(QWidget):
         actions.addWidget(self.rename_button)
         actions.addWidget(self.delete_button)
 
+        self.tags = TagsPanel(db)
+
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.empty)
-        layout.addWidget(self.table, 1)
+        layout.addWidget(self.table, 2)
         layout.addLayout(actions)
+        layout.addSpacing(12)
+        layout.addWidget(self.tags, 1)
         self.refresh()
 
     def edit_selected(self):
@@ -113,6 +118,8 @@ class CategoriesTab(QWidget):
             self.table.setItem(row, BUDGET, budget)
         self.table.setCurrentCell(-1, -1)
         self.empty.setVisible(not categories)
+        if hasattr(self, "tags"):
+            self.tags.refresh()
         self._update_buttons()
 
     def _selected(self):

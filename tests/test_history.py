@@ -43,7 +43,7 @@ def test_every_data_column_is_logged(db):
             " AND name NOT IN ('operations', 'change_log') AND name NOT LIKE 'sqlite_%'"
         )
     ]
-    assert len(tables) == 8
+    assert len(tables) == 10
     for table in tables:
         columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})")]
         for action in ("insert", "update", "delete"):
