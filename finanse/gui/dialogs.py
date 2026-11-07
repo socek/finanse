@@ -46,9 +46,11 @@ from ..wallets import create_wallet, list_wallets, update_wallet
 from . import common, shortcuts
 
 
-def _buttons(dialog, accept_text="Zapisz"):
+def _buttons(dialog, accept_text="Zapisz", shortcut=None):
     box = QDialogButtonBox()
-    box.addButton(accept_text, QDialogButtonBox.ButtonRole.AcceptRole)
+    accept = box.addButton(accept_text, QDialogButtonBox.ButtonRole.AcceptRole)
+    if shortcut:
+        shortcuts.show_on(accept, shortcut)
     box.addButton("Anuluj", QDialogButtonBox.ButtonRole.RejectRole)
     box.accepted.connect(dialog.accept)
     box.rejected.connect(dialog.reject)
@@ -133,7 +135,8 @@ class _ProductRowsMixin:
         for row in rows or [EMPTY_ROW]:
             self._add_row(row)
 
-        add = QPushButton(shortcuts.label("Dodaj produkt", "add_product"))
+        add = QPushButton("Dodaj produkt")
+        shortcuts.show_on(add, "add_product")
         add.setAutoDefault(False)
         add.clicked.connect(self._next_product)
         bottom = QHBoxLayout()
@@ -338,7 +341,8 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.occurred_on = common.date_edit(
             TransactionDialog.remembered_date if is_new else data["occurred_on"]
         )
-        self.today_button = QPushButton(shortcuts.label("Dzisiaj", "today"))
+        self.today_button = QPushButton("Dzisiaj")
+        shortcuts.show_on(self.today_button, "today")
         self.today_button.setAutoDefault(False)
         self.today_button.clicked.connect(self.set_today)
         self.today_shortcut = shortcuts.bind("today", self, self.set_today)
@@ -373,7 +377,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
-        layout.addWidget(_buttons(self, shortcuts.label(self.ACCEPT_TEXT, "save")))
+        layout.addWidget(_buttons(self, self.ACCEPT_TEXT, "save"))
         self.resize(760, 480)
         if self.wallet_combo is not None:
             self.wallet_combo.currentIndexChanged.connect(self._update_totals)
@@ -496,7 +500,7 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         layout.addWidget(hint)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
-        layout.addWidget(_buttons(self, shortcuts.label("Zapisz", "save")))
+        layout.addWidget(_buttons(self, "Zapisz", "save"))
         self.resize(760, 560)
         self.wallet.currentIndexChanged.connect(self._update_totals)
         self._update_totals()

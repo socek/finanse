@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from ..categories import list_categories
 from ..money import format_totals, parse_money
 from ..wallets import NO_CATEGORY, EntryFilters, last_transaction_date
-from . import common
+from . import common, shortcuts
 
 KEY_ROLE = Qt.ItemDataRole.UserRole
 RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -48,6 +48,7 @@ class FilterBar(QWidget):
         self.use_from.toggled.connect(self.date_from.setEnabled)
         self.use_to.toggled.connect(self.date_to.setEnabled)
         clear = QPushButton("Wyczyść filtry")
+        shortcuts.show_on(clear, "clear_filters")
         clear.clicked.connect(self.clear)
         dates = QHBoxLayout()
         for widget in (self.use_from, self.date_from, self.use_to, self.date_to):
@@ -221,8 +222,10 @@ class WalletList(QListWidget):
 def wallet_panel(wallet_list, *extra_widgets):
     """Lewy panel: lista portfeli i przyciski zaznaczania."""
     select_all = QPushButton("Zaznacz wszystkie")
+    shortcuts.show_on(select_all, "check_all")
     select_all.clicked.connect(lambda: wallet_list.set_all_checked(True))
     select_none = QPushButton("Odznacz wszystkie")
+    shortcuts.show_on(select_none, "uncheck_all")
     select_none.clicked.connect(lambda: wallet_list.set_all_checked(False))
     panel = QWidget()
     layout = QVBoxLayout(panel)

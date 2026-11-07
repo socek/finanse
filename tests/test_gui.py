@@ -1478,8 +1478,10 @@ def test_ctrl_n_without_wallets_reports_it(db, errors):
     assert "Dodaj najpierw portfel" in errors[0]
 
 
-def test_new_transaction_button_shows_shortcut(db, errors):
-    assert "Ctrl+N" in WalletsTab(db).new_transaction_button.text()
+def test_new_transaction_button_shows_shortcut_in_tooltip(db, errors):
+    button = WalletsTab(db).new_transaction_button
+    assert button.text() == "Nowa transakcja"
+    assert "Ctrl+N" in button.toolTip()
 
 
 def _save_new_transaction(db, wallet, date=None):
@@ -1552,7 +1554,8 @@ def test_today_button_sets_current_date_in_every_dialog(db, errors):
         dialog.today_button.click()
         assert dialog.occurred_on.date() == QDate.currentDate()
         assert dialog.result() != QDialog.DialogCode.Accepted
-    assert "Ctrl+T" in dialog.today_button.text()
+    assert dialog.today_button.text() == "Dzisiaj"
+    assert "Ctrl+T" in dialog.today_button.toolTip()
 
 
 @pytest.mark.parametrize("field", ["description", "product"])
@@ -1754,7 +1757,7 @@ def test_categories_tab_deletes_only_empty(db, errors):
     assert "pustą" in tab.delete_button.toolTip()
     assert "(produkty: 1)" in tab.delete_button.toolTip()
     tab.delete()  # np. klawiszem Delete
-    assert errors[0] == tab.delete_button.toolTip()
+    assert errors[0] in tab.delete_button.toolTip()
     assert db.execute("SELECT COUNT(*) FROM categories WHERE id = ?", (used,)).fetchone()[0] == 1
 
     errors.clear()
@@ -1767,7 +1770,7 @@ def test_categories_tab_deletes_only_empty(db, errors):
 
     errors.clear()
     select("Pusta")
-    assert tab.delete_button.isEnabled() and tab.delete_button.toolTip() == ""
+    assert tab.delete_button.isEnabled() and "pustą" not in tab.delete_button.toolTip()
     tab.delete_button.click()
     assert errors == []
     names = [tab.table.item(r, 0).text() for r in range(tab.table.rowCount())]
@@ -1786,7 +1789,7 @@ def test_disabled_delete_button_really_shows_tooltip(db, errors):
     assert QTest.qWaitForWindowExposed(tab)
     button = tab.delete_button
     assert not button.isEnabled()
-    assert button.toolTip() == "Zaznacz kategorię."
+    assert "Zaznacz kategorię." in button.toolTip()
 
     row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 0).text() == "Używana")
     tab.table.setCurrentCell(row, 0)

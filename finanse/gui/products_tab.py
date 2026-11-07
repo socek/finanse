@@ -17,7 +17,7 @@ from ..money import format_money, format_quantity
 from ..products import group_products_by_day, load_products
 from ..transactions import get_transaction
 from ..wallets import get_wallet, list_wallets
-from . import common
+from . import common, shortcuts
 from .day_list import (
     KEY_ROLE,
     RIGHT,
@@ -69,10 +69,13 @@ class ProductsTab(QWidget):
         self.tree.customContextMenuRequested.connect(self._show_menu)
 
         self.expand_all_button = QPushButton("Rozwiń wszystko")
+        shortcuts.show_on(self.expand_all_button, "expand_all")
         self.expand_all_button.clicked.connect(self.tree.expandAll)
         self.collapse_all_button = QPushButton("Zwiń wszystko")
+        shortcuts.show_on(self.collapse_all_button, "collapse_all")
         self.collapse_all_button.clicked.connect(self.tree.collapseAll)
         self.edit_button = QPushButton("Edytuj transakcję")
+        shortcuts.show_on(self.edit_button, "edit_selected")
         self.edit_button.clicked.connect(self.edit_transaction)
         actions = QHBoxLayout()
         actions.addWidget(self.expand_all_button)

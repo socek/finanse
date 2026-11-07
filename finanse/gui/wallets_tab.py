@@ -56,6 +56,7 @@ class WalletsTab(QWidget):
         self.wallet_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.wallet_list.customContextMenuRequested.connect(self._show_wallet_menu)
         new_wallet = QPushButton("Nowy portfel")
+        shortcuts.show_on(new_wallet, "new_wallet")
         new_wallet.clicked.connect(self.create_wallet)
         left = wallet_panel(self.wallet_list, new_wallet)
 
@@ -70,9 +71,11 @@ class WalletsTab(QWidget):
         balance_font.setPointSizeF(balance_font.pointSizeF() * 1.2)
         self.balance.setFont(balance_font)
 
-        self.new_transaction_button = QPushButton()
+        self.new_transaction_button = QPushButton("Nowa transakcja")
+        shortcuts.show_on(self.new_transaction_button, "new_transaction")
         self.new_transaction_button.clicked.connect(self.create_transaction)
         self.transfer_button = QPushButton("Przelew")
+        shortcuts.show_on(self.transfer_button, "new_transfer")
         self.transfer_button.clicked.connect(self.create_transfer)
         self.wallet_actions = [self.new_transaction_button, self.transfer_button]
         actions = QHBoxLayout()
@@ -105,12 +108,16 @@ class WalletsTab(QWidget):
         )
 
         self.edit_entry_button = QPushButton("Edytuj operację")
+        shortcuts.show_on(self.edit_entry_button, "edit_selected")
         self.edit_entry_button.clicked.connect(self.edit_entry)
         self.delete_entry_button = QPushButton("Usuń operację")
+        shortcuts.show_on(self.delete_entry_button, "delete_selected")
         self.delete_entry_button.clicked.connect(self.delete_entry)
         self.expand_all_button = QPushButton("Rozwiń wszystko")
+        shortcuts.show_on(self.expand_all_button, "expand_all")
         self.expand_all_button.clicked.connect(self.tree.expandAll)
         self.collapse_all_button = QPushButton("Zwiń wszystko")
+        shortcuts.show_on(self.collapse_all_button, "collapse_all")
         self.collapse_all_button.clicked.connect(self.tree.collapseAll)
         entry_actions = QHBoxLayout()
         entry_actions.addWidget(self.expand_all_button)
@@ -179,9 +186,6 @@ class WalletsTab(QWidget):
         self.wallet_list.set_all_checked(False)
 
     def refresh(self, select=None):
-        self.new_transaction_button.setText(
-            shortcuts.label("Nowa transakcja", "new_transaction")
-        )
         self.wallet_list.fill(
             list_wallets(self.db, self._balance_date()), self._wallet_label, select
         )

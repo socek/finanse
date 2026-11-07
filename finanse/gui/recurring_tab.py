@@ -28,6 +28,7 @@ class RecurringTab(QWidget):
         self.db = db
 
         new_button = QPushButton("Nowa transakcja cykliczna")
+        shortcuts.show_on(new_button, "new_recurring")
         new_button.clicked.connect(self.create)
         top = QHBoxLayout()
         top.addWidget(new_button)
@@ -67,8 +68,10 @@ class RecurringTab(QWidget):
         )
 
         self.edit_button = QPushButton("Edytuj")
+        shortcuts.show_on(self.edit_button, "edit_selected")
         self.edit_button.clicked.connect(self.edit)
         self.delete_button = QPushButton("Usuń")
+        shortcuts.show_on(self.delete_button, "delete_selected")
         self.delete_button.clicked.connect(self.delete)
         actions = QHBoxLayout()
         actions.addStretch()
@@ -135,6 +138,7 @@ class RecurringTab(QWidget):
                 common.positive_color() if income else common.negative_color()
             )
         pay = QPushButton("Zapłać")
+        pay.setToolTip(shortcuts.tooltip("pay_selected", "Dotyczy zaznaczonego wiersza."))
         pay.setEnabled(item["remaining"] != 0)
         pay.clicked.connect(lambda: self.pay(item["id"], item["wallet_id"]))
         self.table.setCellWidget(row, PAY, pay)

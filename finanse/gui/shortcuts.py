@@ -75,6 +75,7 @@ _ALWAYS_RESERVED = (
 
 _overrides = {}
 _bound = []
+_hinted = []
 
 
 def normalize(text):
@@ -99,10 +100,18 @@ def display_text(text):
     return text.replace("Return", "Enter")
 
 
-def label(text, key):
-    """Podpis przycisku z aktualnym skrótem."""
+def tooltip(key, text=""):
+    """Podpowiedź z aktualnym skrótem, ewentualnie po własnym tekście."""
     shortcut = sequence_text(key)
-    return f"{text} ({display_text(shortcut)})" if shortcut else text
+    hint = f"Skrót: {display_text(shortcut)}" if shortcut else ""
+    return "\n".join(part for part in (text, hint) if part)
+
+
+def show_on(widget, key):
+    """Pokazuje skrót w podpowiedzi przycisku i aktualizuje ją po zmianie w ustawieniach."""
+    widget.setToolTip(tooltip(key))
+    _hinted[:] = [(k, w) for k, w in _hinted if isValid(w)]
+    _hinted.append((key, widget))
 
 
 def _blocks_typing(text):
@@ -169,6 +178,10 @@ def set_sequence(key, text):
     for bound_key, shortcut in _bound:
         if bound_key == key:
             shortcut.setKey(QKeySequence(text))
+    _hinted[:] = [(k, widget) for k, widget in _hinted if isValid(widget)]
+    for hinted_key, widget in _hinted:
+        if hinted_key == key:
+            widget.setToolTip(tooltip(key))
 
 
 def reset_all():
@@ -197,3 +210,4 @@ def forget():
     """Stan początkowy, potrzebny testom."""
     _overrides.clear()
     _bound.clear()
+    _hinted.clear()

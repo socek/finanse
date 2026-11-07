@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from ..money import format_money
 from ..reports import build_report
 from ..wallets import list_wallets
-from . import common
+from . import common, shortcuts
 
 BAR_WIDTH = 12
 BAR_GAP = 2
@@ -234,8 +234,10 @@ class ReportsTab(QWidget):
         self.wallet_list = QListWidget()
         self.wallet_list.itemChanged.connect(self._wallet_toggled)
         self.select_all_button = QPushButton("Zaznacz wszystkie")
+        shortcuts.show_on(self.select_all_button, "check_all")
         self.select_all_button.clicked.connect(lambda: self._set_all_checked(True))
         self.select_none_button = QPushButton("Odznacz wszystkie")
+        shortcuts.show_on(self.select_none_button, "uncheck_all")
         self.select_none_button.clicked.connect(lambda: self._set_all_checked(False))
         side = QWidget()
         side.setFixedWidth(230)
@@ -249,11 +251,13 @@ class ReportsTab(QWidget):
         side_layout.addWidget(self.select_none_button)
 
         self.previous_button = QPushButton("← Poprzedni")
+        shortcuts.show_on(self.previous_button, "previous_month")
         self.previous_button.clicked.connect(lambda: self.show_month(self.report["previous_month"]))
         self.month_edit = QDateEdit()
         self.month_edit.setDisplayFormat("yyyy-MM")
         self.month_edit.dateChanged.connect(self._month_edited)
         self.next_button = QPushButton("Następny →")
+        shortcuts.show_on(self.next_button, "next_month")
         self.next_button.clicked.connect(lambda: self.show_month(self.report["next_month"]))
         controls = QHBoxLayout()
         controls.addWidget(self.previous_button)

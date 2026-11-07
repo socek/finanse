@@ -2,13 +2,12 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QDate, QEvent, Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QDialog, QPushButton
-
 from helpers import priced
+from PySide6.QtWidgets import QDialog, QPushButton
 
 from finanse.db import connect, init_db
 from finanse.gui import common, shortcuts
-from finanse.gui.dialogs import TransactionDialog
+from finanse.gui.dialogs import PaymentDialog, TransactionDialog
 from finanse.gui.main_window import MainWindow
 from finanse.recurring import create_recurring, get_recurring
 from finanse.settings import load_settings
@@ -218,7 +217,7 @@ def test_changing_shortcut_works_at_once_and_is_saved(db, window):
 
     editor_set(window, "new_transaction", "Ctrl+J")
     window.tabs.setCurrentWidget(window.wallets)
-    assert "Ctrl+J" in window.wallets.new_transaction_button.text()
+    assert "Ctrl+J" in window.wallets.new_transaction_button.toolTip()
     assert shortcuts.saved_values() == {"tab_1": "Ctrl+Shift+1", "new_transaction": "Ctrl+J"}
 
 
@@ -323,20 +322,100 @@ def _dialog(db):
     return dialog
 
 
-def test_dialog_labels_follow_settings(db, errors):
+def _button(dialog, text):
+    return next(b for b in dialog.findChildren(QPushButton) if b.text() == text)
+
+
+def test_dialog_buttons_show_shortcut_only_in_tooltip(db, errors):
     dialog = _dialog(db)
-    assert dialog.today_button.text() == "Dzisiaj (Ctrl+T)"
-    texts = {button.text() for button in dialog.findChildren(QPushButton)}
-    assert "Dodaj produkt (Enter)" in texts and "Zapisz (Shift+Enter)" in texts
+    assert dialog.today_button.text() == "Dzisiaj"
+    assert dialog.today_button.toolTip() == "Skrót: Ctrl+T"
+    assert _button(dialog, "Dodaj produkt").toolTip() == "Skrót: Enter"
+    assert _button(dialog, "Zapisz").toolTip() == "Skrót: Shift+Enter"
+    assert _button(dialog, "Anuluj").toolTip() == ""
     dialog.close()
 
     shortcuts.set_sequence("today", "Ctrl+Shift+T")
     shortcuts.set_sequence("save", "Ctrl+S")
     shortcuts.set_sequence("add_product", "")
     dialog = TransactionDialog(db, list_wallets(db)[0])
-    assert dialog.today_button.text() == "Dzisiaj (Ctrl+Shift+T)"
-    texts = {button.text() for button in dialog.findChildren(QPushButton)}
-    assert "Dodaj produkt" in texts and "Zapisz (Ctrl+S)" in texts
+    assert dialog.today_button.toolTip() == "Skrót: Ctrl+Shift+T"
+    assert _button(dialog, "Zapisz").toolTip() == "Skrót: Ctrl+S"
+    assert _button(dialog, "Dodaj produkt").toolTip() == ""
+
+
+def test_payment_button_has_tooltip_too(db, errors):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1"))
+    dialog = PaymentDialog(db, get_wallet(db, wallet), recurring)
+    assert _button(dialog, "Zapłać").toolTip() == "Skrót: Shift+Enter"
+
+
+def test_no_button_text_contains_a_shortcut(db, window):
+    create_wallet(db, "A")
+    window.refresh_all_tabs()
+    texts = [button.text() for button in window.findChildren(QPushButton)]
+    assert texts
+    assert not [text for text in texts if "(" in text or "Ctrl+" in text or "Shift+" in text]
+
+
+@pytest.mark.parametrize(
+    ("get_button", "key"),
+    [
+        (lambda w: w.wallets.new_transaction_button, "new_transaction"),
+        (lambda w: w.wallets.transfer_button, "new_transfer"),
+        (lambda w: w.wallets.edit_entry_button, "edit_selected"),
+        (lambda w: w.wallets.delete_entry_button, "delete_selected"),
+        (lambda w: w.wallets.expand_all_button, "expand_all"),
+        (lambda w: w.products.collapse_all_button, "collapse_all"),
+        (lambda w: w.products.edit_button, "edit_selected"),
+        (lambda w: w.recurring.edit_button, "edit_selected"),
+        (lambda w: w.recurring.delete_button, "delete_selected"),
+        (lambda w: w.reports.previous_button, "previous_month"),
+        (lambda w: w.reports.next_button, "next_month"),
+        (lambda w: w.reports.select_all_button, "check_all"),
+        (lambda w: w.categories.rename_button, "edit_selected"),
+    ],
+)
+def test_main_buttons_have_shortcut_tooltips(db, window, get_button, key):
+    button = get_button(window)
+    assert button.toolTip() == f"Skrót: {shortcuts.display_text(shortcuts.default_text(key))}"
+
+
+def test_tooltip_follows_changed_and_disabled_shortcut(db, window):
+    button = window.wallets.new_transaction_button
+    assert button.text() == "Nowa transakcja"
+    assert button.toolTip() == "Skrót: Ctrl+N"
+    editor_set(window, "new_transaction", "Ctrl+J")
+    assert button.toolTip() == "Skrót: Ctrl+J"
+    editor = window.settings.editors["new_transaction"]
+    editor.clear()
+    editor.editingFinished.emit()
+    assert button.toolTip() == ""
+    window.settings.reset_all()
+    assert button.toolTip() == "Skrót: Ctrl+N"
+
+
+def test_pay_row_button_tooltip_follows_change(db, window):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1"))
+    window.recurring.refresh()
+    pay = window.recurring.table.cellWidget(0, 7)
+    assert pay.text() == "Zapłać"
+    assert "Skrót: Ctrl+P" in pay.toolTip()
+    editor_set(window, "pay_selected", "Ctrl+J")
+    assert "Skrót: Ctrl+J" in window.recurring.table.cellWidget(0, 7).toolTip()
+
+
+def test_category_delete_tooltip_combines_reason_and_shortcut(db, window):
+    window.tabs.setCurrentWidget(window.categories)
+    tab = window.categories
+    assert tab.delete_button.toolTip() == "Zaznacz kategorię.\nSkrót: Del"
+    tab.table.setCurrentCell(0, 0)
+    assert tab.delete_button.toolTip() == "Skrót: Del"  # kategoria jest pusta
+    editor_set(window, "delete_selected", "Ctrl+J")
+    tab.table.setCurrentCell(0, 0)  # odświeżenie zakładki kasuje zaznaczenie
+    assert tab.delete_button.toolTip() == "Skrót: Ctrl+J"
 
 
 def test_changed_save_and_add_keys_work_in_dialog(db, errors):

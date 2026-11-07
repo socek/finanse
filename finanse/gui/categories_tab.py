@@ -55,6 +55,7 @@ class CategoriesTab(QWidget):
         self.empty = QLabel("Nie masz jeszcze kategorii.")
 
         self.rename_button = QPushButton("Zmień nazwę")
+        shortcuts.show_on(self.rename_button, "edit_selected")
         self.rename_button.clicked.connect(self.rename)
         self.delete_button = QPushButton("Usuń")
         self.delete_button.clicked.connect(self.delete)
@@ -108,7 +109,7 @@ class CategoriesTab(QWidget):
         self.rename_button.setEnabled(selected)
         reason = self._block_reason(row) if selected else "Zaznacz kategorię."
         self.delete_button.setEnabled(not reason)
-        self.delete_button.setToolTip(reason)
+        self.delete_button.setToolTip(shortcuts.tooltip("delete_selected", reason))
 
     def add(self):
         try:
