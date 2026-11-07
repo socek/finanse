@@ -12,7 +12,6 @@ def pyproject():
 
 
 def test_current_version_is_in_changelog():
-    assert __version__ == "0.1"
     assert f"\n## {__version__} (" in changelog_text()
 
 

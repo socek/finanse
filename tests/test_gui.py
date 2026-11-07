@@ -5,6 +5,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog
 from test_csv_import import BANK_CSV
 
+from finanse import __version__
 from finanse.gui import common
 from finanse.gui.categories_tab import CategoriesTab
 from finanse.gui.dialogs import (
@@ -1310,9 +1311,9 @@ def test_about_tab_shows_version_and_changelog(db, errors):
     window = MainWindow(db)
     window.tabs.setCurrentWidget(window.about)
     assert window.tabs.tabText(window.tabs.currentIndex()) == "O programie"
-    assert window.about.version.text() == "Wersja 0.1"
+    assert window.about.version.text() == f"Wersja {__version__}"
     text = window.about.changelog.toPlainText()
-    assert "Historia zmian" in text and "0.1 (" in text
+    assert "Historia zmian" in text and f"{__version__} (" in text
     assert window.about.changelog.isReadOnly()
 
 

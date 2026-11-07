@@ -1,5 +1,9 @@
 # Historia zmian
 
+## 0.2 (w przygotowaniu)
+
+Na razie bez zmian względem wersji 0.1.
+
 ## 0.1 (2026-11-07)
 
 Pierwsza wersja aplikacji okienkowej.
