@@ -302,6 +302,16 @@ class ReportsTab(QWidget):
             QHeaderView.ResizeMode.Stretch
         )
 
+        self.vat_title = _section_title("VAT")
+        self.vat_table = QTableWidget(0, 5)
+        self.vat_table.setHorizontalHeaderLabels(
+            ["Stawka", "Sprzedaż netto", "VAT należny", "Zakupy netto", "VAT naliczony"]
+        )
+        self.vat_table.verticalHeader().hide()
+        self.vat_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.vat_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.vat_balance = QLabel()
+
         self.expenses_grid = QGridLayout()
         self.expenses_empty = QLabel("Brak wydatków w tym miesiącu.")
         self.incomes_title = _section_title("Przychody według kategorii")
@@ -344,6 +354,10 @@ class ReportsTab(QWidget):
         body_layout.addSpacing(12)
         body_layout.addWidget(self.wallets_title)
         body_layout.addWidget(self.wallets_table)
+        body_layout.addSpacing(12)
+        body_layout.addWidget(self.vat_title)
+        body_layout.addWidget(self.vat_table)
+        body_layout.addWidget(self.vat_balance)
         body_layout.addSpacing(12)
         body_layout.addWidget(_section_title("Wydatki według kategorii"))
         body_layout.addWidget(self.expenses_empty)
@@ -460,6 +474,7 @@ class ReportsTab(QWidget):
         currency = report["currency"]
         self.month_title.setText(report["month_title"])
         self._fill_wallet_totals(report)
+        self._fill_vat(report)
         self.income_label.setText(format_money(report["income_total"], currency))
         self.expense_label.setText(format_money(report["expense_total"], currency))
         self.net_label.setText(format_money(report["net_total"], currency))
@@ -533,6 +548,42 @@ class ReportsTab(QWidget):
             self.selection_label.setText(f"Wszystkie portfele w {report['currency']}")
         else:
             self.selection_label.setText(", ".join(names))
+
+    def _fill_vat(self, report):
+        """Sekcja widoczna tylko przy wybranym portfelu z VAT."""
+        vat = report["vat"]
+        for widget in (self.vat_title, self.vat_table, self.vat_balance):
+            widget.setVisible(vat is not None)
+        if vat is None:
+            return
+        currency = report["currency"]
+        rows = [*vat["by_rate"], {"label": "Razem", **vat}]
+        self.vat_table.setRowCount(len(rows))
+        for row, data in enumerate(rows):
+            cells = (
+                data["label"],
+                format_money(data["sales_net"], currency),
+                format_money(data["sales_vat"], currency),
+                format_money(data["purchases_net"], currency),
+                format_money(data["purchases_vat"], currency),
+            )
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if column:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                if data is rows[-1]:
+                    font = QFont(item.font())
+                    font.setBold(True)
+                    item.setFont(font)
+                self.vat_table.setItem(row, column, item)
+        _fit_height(self.vat_table)
+        balance = vat["balance"]
+        if balance >= 0:
+            self.vat_balance.setText(f"VAT do zapłaty: {format_money(balance, currency)}")
+        else:
+            self.vat_balance.setText(f"Nadwyżka VAT naliczonego: {format_money(-balance, currency)}")
 
     def _fill_wallet_totals(self, report):
         """Rozbicie ma sens dopiero przy co najmniej dwóch portfelach."""

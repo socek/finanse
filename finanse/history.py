@@ -67,6 +67,14 @@ def _plain(value, _names):
     return str(value)
 
 
+def _vat_rate(value, _names):
+    return f"{value}%"
+
+
+def _wallet_type(value, _names):
+    return {"vat": "z VAT", "plain": "zwykły"}.get(value, value)
+
+
 _PRODUCT_FIELDS = (
     ("name", "nazwa", _text, "brak"),
     ("category_id", "kategoria", _category, "bez kategorii"),
@@ -76,12 +84,15 @@ _PRODUCT_FIELDS = (
     ("unit_price_cents", "cena", _money, "brak"),
     ("total_e5", "wartość", _precise, "brak"),
     ("total_cents", "wartość", _money, "brak"),
+    ("vat_rate", "VAT", _vat_rate, "zw."),
+    ("vat_cents", "kwota VAT", _money, "brak"),
 )
 FIELDS = {
     "wallets": (
         ("name", "nazwa", _text, "brak"),
         ("currency", "waluta", _plain, "brak"),
         ("initial_balance_cents", "saldo początkowe", _money, "brak"),
+        ("wallet_type", "typ", _wallet_type, "zwykły"),
     ),
     "categories": (("name", "nazwa", _text, "brak"),),
     "transactions": (
@@ -142,6 +153,13 @@ def _fields(table, values):
     ]
 
 
+def _is_plain_default(field, values):
+    """Opis pozycji bez VAT nie musi tego wyliczać."""
+    if field[0] in ("vat_rate", "vat_cents"):
+        return values.get("vat_rate") is None
+    return field[0] == "wallet_type" and values.get("wallet_type") == "plain"
+
+
 def _describe(row, names):
     """Jedna linia opisu albo None, gdy zmieniły się tylko pola techniczne."""
     table = row["table_name"]
@@ -160,7 +178,9 @@ def _describe(row, names):
         f"{field[1]}: {_value(field, current, names)}"
         for field in _fields(table, current)
         # Starsze wpisy dziennika mają kolumny, których już nie ma, i na odwrót.
-        if field[0] != TITLE_FIELDS[table] and field[0] in current
+        if field[0] != TITLE_FIELDS[table]
+        and field[0] in current
+        and not _is_plain_default(field, current)
     ]
     return f"{title} ({', '.join(details)})"
 

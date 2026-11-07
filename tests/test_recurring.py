@@ -91,7 +91,8 @@ def test_payment_without_products_needs_amount_and_category_from_form(db):
         wallet, "expense", "2026-11-05",
     )  # fmt: skip
     assert saved["rows"] == [
-        {"name": "Czynsz", "category": dom, "quantity": "1", "price": "30,00", "total": "30,00"}
+        {"name": "Czynsz", "category": dom, "quantity": "1", "price": "30,00", "total": "30,00",
+         "vat_rate": None}
     ]
     assert get_wallet(db, wallet)["balance_cents"] == 7000
     assert get_recurring(db, recurring)["last_paid_on"] == "2026-11-05"

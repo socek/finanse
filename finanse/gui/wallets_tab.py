@@ -20,6 +20,7 @@ from ..money import format_money, format_totals
 from ..transactions import delete_transaction, get_transaction
 from ..transfers import delete_transfer
 from ..wallets import (
+    VAT,
     delete_wallet,
     get_wallet,
     group_by_day,
@@ -44,6 +45,7 @@ from .import_dialog import ImportDialog
 
 ENTRY_ROLE = KEY_ROLE
 DATE, DESCRIPTION, WALLET, CATEGORY, AMOUNT = range(5)
+NET, VAT_AMOUNT = 7, 8  # za kolumnami sum dnia, a na ekranie przed kwotą
 
 
 class WalletsTab(QWidget):
@@ -95,6 +97,7 @@ class WalletsTab(QWidget):
         self.tree = DayTree(
             ["Data", "Opis", "Portfel", "Kategoria", "Kwota"],
             stretch_columns=(DESCRIPTION,),
+            extra_headers=("Netto", "VAT"),
         )
         self.tree.currentItemChanged.connect(self._update_entry_buttons)
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_entry())
@@ -228,6 +231,12 @@ class WalletsTab(QWidget):
     def refresh_entries(self, *_):
         wallet_ids = self.wallet_list.checked_ids()
         self.tree.setColumnHidden(WALLET, len(wallet_ids) < 2)
+        has_vat = any(
+            wallet["id"] in wallet_ids and wallet["wallet_type"] == VAT
+            for wallet in list_wallets(self.db)
+        )
+        self.tree.setColumnHidden(NET, not has_vat)
+        self.tree.setColumnHidden(VAT_AMOUNT, not has_vat)
         date_from, date_to, filters, notes = self.filter_bar.state()
         entries, summary = load_entries(self.db, wallet_ids, date_from, date_to, filters)
         filtered = bool(date_from or date_to or filters.active)
@@ -276,6 +285,12 @@ class WalletsTab(QWidget):
             ]
         )
         item.setData(DATE, ENTRY_ROLE, ("transaction", transaction["id"]))
+        if transaction["wallet_type"] == VAT:
+            net = transaction["total_cents"] - transaction["vat_cents"]
+            item.setText(NET, format_money(net, transaction["currency"]))
+            item.setText(VAT_AMOUNT, format_money(transaction["vat_cents"], transaction["currency"]))
+            item.setTextAlignment(NET, RIGHT)
+            item.setTextAlignment(VAT_AMOUNT, RIGHT)
         common.mark_row_kind(item, income, self.tree.columnCount())
         common.mark_no_category(item, CATEGORY)
         item.setTextAlignment(AMOUNT, RIGHT)

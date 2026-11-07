@@ -10,6 +10,7 @@ from .transactions import (
     parse_product_rows,
     validate_transaction,
 )
+from .wallets import wallet_has_vat
 
 
 def list_recurring(db):
@@ -45,6 +46,7 @@ def get_recurring(db, recurring_id):
             "quantity": format_quantity_input(product["quantity_e5"]),
             "price": format_precise_input(product["unit_price_e5"]),
             "total": format_precise_input(product["total_e5"]),
+            "vat_rate": product["vat_rate"],
         }
         for product in db.execute(
             "SELECT * FROM recurring_products WHERE recurring_id = ? ORDER BY position",
@@ -74,7 +76,9 @@ def _validate(db, wallet_id, kind, description, remaining, rows):
         errors.append("Licznik musi być liczbą całkowitą nie mniejszą niż 0.")
 
     category_ids = {row["id"] for row in db.execute("SELECT id FROM categories")}
-    products, product_errors = parse_product_rows(rows, category_ids, required=False)
+    products, product_errors = parse_product_rows(
+        rows, category_ids, required=False, has_vat=wallet_has_vat(db, wallet_id)
+    )
     errors += product_errors
     if errors:
         raise ValidationError(errors)
@@ -86,8 +90,8 @@ def _insert_recurring_products(db, recurring_id, products):
         """
         INSERT INTO recurring_products (
             recurring_id, position, name, category_id,
-            quantity_e5, unit_price_e5, total_e5, total_cents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            quantity_e5, unit_price_e5, total_e5, total_cents, vat_rate, vat_cents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -99,6 +103,8 @@ def _insert_recurring_products(db, recurring_id, products):
                 product["unit_price_e5"],
                 product["total_e5"],
                 product["total_cents"],
+                product["vat_rate"],
+                product["vat_cents"],
             )
             for position, product in enumerate(products)
         ],
@@ -179,7 +185,7 @@ def pay_recurring(db, recurring_id, kind, occurred_on, description, rows):
     if recurring["remaining"] == 0:
         raise ValidationError("Licznik tej transakcji cyklicznej doszedł już do zera.")
     occurred_on, description, products = validate_transaction(
-        db, kind, occurred_on, description, rows
+        db, recurring["wallet_id"], kind, occurred_on, description, rows
     )
     with db:
         transaction_id = db.execute(

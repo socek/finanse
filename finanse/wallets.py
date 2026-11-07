@@ -7,6 +7,7 @@ from .errors import ValidationError
 from .money import parse_money
 
 MAX_NAME_LENGTH = 100
+PLAIN, VAT = "plain", "vat"
 
 _WALLET_WITH_BALANCE = """
     SELECT w.*,
@@ -121,27 +122,41 @@ def _parse(name, currency, initial_balance):
     return name, currency, initial_cents
 
 
-def create_wallet(db, name, currency="PLN", initial_balance="0"):
+def _check_type(wallet_type):
+    if wallet_type not in (PLAIN, VAT):
+        raise ValidationError("Wybierz typ portfela.")
+
+
+def wallet_has_vat(db, wallet_id):
+    row = db.execute("SELECT wallet_type FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    return row is not None and row["wallet_type"] == VAT
+
+
+def create_wallet(db, name, currency="PLN", initial_balance="0", wallet_type=PLAIN):
+    _check_type(wallet_type)
     values = _parse(name, currency, initial_balance)
     try:
         with db:
             return db.execute(
-                "INSERT INTO wallets (name, currency, initial_balance_cents)"
-                " VALUES (?, ?, ?)",
-                values,
+                "INSERT INTO wallets (name, currency, initial_balance_cents, wallet_type)"
+                " VALUES (?, ?, ?, ?)",
+                (*values, wallet_type),
             ).lastrowid
     except sqlite3.IntegrityError:
         raise ValidationError("Masz już portfel o tej nazwie.") from None
 
 
-def update_wallet(db, wallet_id, name, currency, initial_balance):
+def update_wallet(db, wallet_id, name, currency, initial_balance, wallet_type=None):
+    """Bez podanego typu portfel go zachowuje. Stawki VAT produktów pozostają zapisane."""
+    if wallet_type is not None:
+        _check_type(wallet_type)
     values = _parse(name, currency, initial_balance)
     try:
         with db:
             db.execute(
-                "UPDATE wallets SET name = ?, currency = ?, initial_balance_cents = ?"
-                " WHERE id = ?",
-                (*values, wallet_id),
+                "UPDATE wallets SET name = ?, currency = ?, initial_balance_cents = ?,"
+                " wallet_type = COALESCE(?, wallet_type) WHERE id = ?",
+                (*values, wallet_type, wallet_id),
             )
     except sqlite3.IntegrityError:
         raise ValidationError("Masz już portfel o tej nazwie.") from None
@@ -181,7 +196,8 @@ def load_entries(db, wallet_ids, date_from="", date_to="", filters=EntryFilters(
     transactions = db.execute(
         f"""
         SELECT t.*, COALESCE(SUM(p.total_cents), 0) AS total_cents,
-               w.name AS wallet_name, w.currency
+               COALESCE(SUM(p.vat_cents), 0) AS vat_cents,
+               w.name AS wallet_name, w.currency, w.wallet_type
         FROM transactions t
         JOIN wallets w ON w.id = t.wallet_id
         LEFT JOIN products p ON p.transaction_id = t.id

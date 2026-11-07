@@ -291,9 +291,12 @@ class DayTree(QTreeWidget):
     przywraca układ sprzed filtrowania.
     """
 
-    def __init__(self, headers, stretch_columns, parent=None):
+    def __init__(self, headers, stretch_columns, extra_headers=(), parent=None):
+        """Dodatkowe kolumny, np. VAT, są za sumami, ale widać je przed ostatnią z `headers`."""
         super().__init__(parent)
-        self.setHeaderLabels([*headers, "Przychody", "Wydatki"])
+        self.income_column = len(headers)
+        self.expense_column = len(headers) + 1
+        self.setHeaderLabels([*headers, "Przychody", "Wydatki", *extra_headers])
         self.setAlternatingRowColors(True)
         self.setUniformRowHeights(True)
         header = self.header()
@@ -305,6 +308,8 @@ class DayTree(QTreeWidget):
                 if column in stretch_columns
                 else QHeaderView.ResizeMode.ResizeToContents,
             )
+        for offset in range(len(extra_headers)):
+            header.moveSection(self.expense_column + 1 + offset, len(headers) - 1 + offset)
         self.scope = None
         self.collapsed_before_filtering = None
         self.flash_match = lambda _key: False
@@ -385,7 +390,7 @@ class DayTree(QTreeWidget):
                     self.setCurrentItem(item.child(index))
 
     def _day_item(self, day, label):
-        income_column, expense_column = self.columnCount() - 2, self.columnCount() - 1
+        income_column, expense_column = self.income_column, self.expense_column
         item = QTreeWidgetItem([day["date"], f"{label}: {len(day['entries'])}"])
         item.setData(0, KEY_ROLE, ("day", day["date"]))
         font = QFont(item.font(0))

@@ -4,7 +4,8 @@ from collections import Counter
 from datetime import date
 
 from .money import NBSP, format_money
-from .wallets import list_wallets
+from .transactions import VAT_RATES
+from .wallets import VAT, list_wallets
 
 MONTHS = (
     "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec",
@@ -211,6 +212,54 @@ def _wallet_totals(db, wallets, year, month):
     return result
 
 
+def _vat_report(db, wallets, year, month):
+    """Zestawienie VAT z portfeli z VAT; None, gdy żaden nie jest wybrany."""
+    ids = [wallet["id"] for wallet in wallets if wallet["wallet_type"] == VAT]
+    if not ids:
+        return None
+    end_year, end_month = _shift_month(year, month, 1)
+    marks = ",".join("?" * len(ids))
+    rows = db.execute(
+        f"""
+        SELECT p.vat_rate, t.kind,
+               SUM(p.total_cents - p.vat_cents) AS net, SUM(p.vat_cents) AS vat
+        FROM products p
+        JOIN transactions t ON t.id = p.transaction_id
+        WHERE t.wallet_id IN ({marks})
+          AND t.occurred_on >= ? AND t.occurred_on < ?
+        GROUP BY p.vat_rate, t.kind
+        """,
+        (*ids, f"{_month_key(year, month)}-01", f"{_month_key(end_year, end_month)}-01"),
+    ).fetchall()
+    found = {(row["vat_rate"], row["kind"]): row for row in rows}
+
+    def amount(rate, kind, column):
+        row = found.get((rate, kind))
+        return row[column] if row else 0
+
+    by_rate = []
+    for rate in (*VAT_RATES, None):
+        if (rate, "income") in found or (rate, "expense") in found:
+            by_rate.append(
+                {
+                    "label": "zw." if rate is None else f"{rate}%",
+                    "sales_net": amount(rate, "income", "net"),
+                    "sales_vat": amount(rate, "income", "vat"),
+                    "purchases_net": amount(rate, "expense", "net"),
+                    "purchases_vat": amount(rate, "expense", "vat"),
+                }
+            )
+    totals = {
+        key: sum(row[key] for row in by_rate)
+        for key in ("sales_net", "sales_vat", "purchases_net", "purchases_vat")
+    }
+    return {
+        "by_rate": by_rate,
+        **totals,
+        "balance": totals["sales_vat"] - totals["purchases_vat"],
+    }
+
+
 def build_report(db, currency="", wallet_ids=None, month=""):
     """Raport miesięczny z wybranych portfeli jednej waluty.
 
@@ -244,4 +293,5 @@ def build_report(db, currency="", wallet_ids=None, month=""):
         "income_total": income_total,
         "net_total": income_total - expense_total,
         "trend": _trend(db, ids, year, month_number, currency),
+        "vat": _vat_report(db, selected, year, month_number),
     }

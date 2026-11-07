@@ -129,7 +129,7 @@ def test_wallets_tab_lists_entries_and_filters(db, errors):
     assert "→ B" in transfer_day.child(0).text(1)
     assert purchase_day.child(0).text(1) == "Zakupy"
     assert purchase_day.child(0).childCount() == 0  # produkty są w osobnej zakładce
-    assert tab.tree.columnCount() == 7
+    assert tab.tree.columnCount() == 9
 
     tab.filter_bar.date_from.setDate(QDate(2026, 10, 15))
     tab.filter_bar.use_from.setChecked(True)

@@ -33,10 +33,10 @@ def load_products(db, wallet_ids, date_from="", date_to="", filters=EntryFilters
     rows = db.execute(
         f"""
         SELECT p.id, p.transaction_id, p.name, p.category_id, p.quantity_e5,
-               p.unit_price_e5, p.total_cents,
+               p.unit_price_e5, p.total_cents, p.vat_rate, p.vat_cents,
                c.name AS category_name,
                t.kind, t.occurred_on, t.description,
-               w.name AS wallet_name, w.currency
+               w.name AS wallet_name, w.currency, w.wallet_type
         FROM products p
         JOIN transactions t ON t.id = p.transaction_id
         JOIN wallets w ON w.id = t.wallet_id

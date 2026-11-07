@@ -2,6 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Portfel z VAT: stawki, ceny i wartości netto oraz brutto w formularzu, kolumny netto
+  i VAT na listach oraz zestawienie VAT w raporcie miesięcznym.
 - Kategorię produktu można wpisać z klawiatury, z przybliżonym wyszukiwaniem. Wejście na
   pole zaznacza jego tekst, więc pisanie zaczyna się od zera.
 - Ilość, cena i wartość produktu mogą mieć do 5 miejsc po przecinku. Listy pokazują je

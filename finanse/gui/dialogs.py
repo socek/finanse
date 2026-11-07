@@ -24,7 +24,9 @@ from ..money import (
     format_money,
     format_money_input,
     format_precise_input,
+    gross_from_net,
     line_total,
+    net_from_gross,
     parse_precise,
     parse_quantity,
     to_cents,
@@ -39,12 +41,13 @@ from ..recurring import (
 )
 from ..transactions import (
     EMPTY_ROW,
+    VAT_RATES,
     create_transaction,
     get_transaction,
     update_transaction,
 )
 from ..transfers import create_transfer, get_transfer, update_transfer
-from ..wallets import create_wallet, list_wallets, update_wallet
+from ..wallets import PLAIN, VAT, create_wallet, list_wallets, update_wallet
 from . import common, shortcuts
 from .category_combo import CategoryCombo
 
@@ -91,10 +94,18 @@ class WalletDialog(_SavingDialog):
             format_money_input(wallet["initial_balance_cents"]) if wallet else "0,00"
         )
 
+        self.wallet_type = QComboBox()
+        self.wallet_type.addItem("Zwykły", PLAIN)
+        self.wallet_type.addItem("Z VAT (netto, brutto i stawki)", VAT)
+        self.wallet_type.setCurrentIndex(
+            max(self.wallet_type.findData(wallet["wallet_type"] if wallet else PLAIN), 0)
+        )
+
         form = QFormLayout(self)
         form.addRow("Nazwa", self.name)
         form.addRow("Waluta", self.currency)
         form.addRow("Saldo początkowe", self.initial_balance)
+        form.addRow("Typ", self.wallet_type)
         form.addRow(_buttons(self))
         self.setMinimumWidth(380)
 
@@ -103,6 +114,7 @@ class WalletDialog(_SavingDialog):
             self.name.text(),
             self.currency.text(),
             self.initial_balance.text(),
+            self.wallet_type.currentData(),
         )
         if self.wallet_id is None:
             self.wallet_id = create_wallet(self.db, *values)
@@ -110,6 +122,7 @@ class WalletDialog(_SavingDialog):
             update_wallet(self.db, self.wallet_id, *values)
 
 
+VAT_DIALOG_WIDTH = 1060  # kolumny netto i VAT nie mogą zabrać miejsca na nazwę
 MINUS_SIGNS = "-−–—"  # zwykły minus oraz znaki, które wklejają się np. z wyciągów
 
 
@@ -130,15 +143,12 @@ def _remove_minus(field):
 class _ProductRowsMixin:
     """Tabela produktów z sumą, wspólna dla transakcji i transakcji cyklicznych."""
 
-    NAME, CATEGORY, QUANTITY, PRICE, VALUE, REMOVE = range(6)
+    NAME, CATEGORY, QUANTITY, VAT_RATE, NET_PRICE, PRICE, NET_VALUE, VALUE, REMOVE = range(9)
 
     def _product_section(self, rows, categories):
         self.categories = categories
         self.total = QLabel()
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(
-            ["Produkt", "Kategoria", "Ilość", "Cena", "Wartość", ""]
-        )
+        self.table = QTableWidget(0, 9)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.verticalHeader().hide()
         header = self.table.horizontalHeader()
@@ -146,14 +156,20 @@ class _ProductRowsMixin:
         for column, width in (
             (self.CATEGORY, 150),
             (self.QUANTITY, 80),
+            (self.VAT_RATE, 70),
+            (self.NET_PRICE, 90),
             (self.PRICE, 90),
+            (self.NET_VALUE, 90),
             (self.VALUE, 90),
             (self.REMOVE, 60),
         ):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(column, width)
+        self._net_fields = {}
+        self._editing_net = None
         for row in rows or [EMPTY_ROW]:
             self._add_row(row)
+        self._update_vat_columns()
 
         add = QPushButton("Dodaj produkt")
         shortcuts.show_on(add, "add_product")
@@ -188,6 +204,24 @@ class _ProductRowsMixin:
         else:
             self.table.cellWidget(last, self.NAME).setFocus()
 
+    def _has_vat(self):
+        raise NotImplementedError
+
+    def _update_vat_columns(self):
+        """Kolumny VAT są widoczne tylko w portfelu z VAT."""
+        has_vat = self._has_vat()
+        for column in (self.VAT_RATE, self.NET_PRICE, self.NET_VALUE):
+            self.table.setColumnHidden(column, not has_vat)
+        if has_vat and self.width() < VAT_DIALOG_WIDTH:
+            self.resize(VAT_DIALOG_WIDTH, self.height())
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Produkt", "Kategoria", "Ilość", "VAT", "Cena netto",
+                "Cena brutto" if has_vat else "Cena", "Wartość netto",
+                "Wartość brutto" if has_vat else "Wartość", "",
+            ]
+        )  # fmt: skip
+
     def _add_row(self, row, focus=False):
         index = self.table.rowCount()
         self.table.insertRow(index)
@@ -208,21 +242,39 @@ class _ProductRowsMixin:
         stored = row.get("total", "")
         value.setText(stored or computed)
         value.setProperty("fixed", self._is_fixed_value(stored, computed, price.text()))
+        vat_rate = QComboBox()
+        for rate in VAT_RATES:
+            vat_rate.addItem(f"{rate}%", rate)
+        vat_rate.addItem("zw.", None)
+        vat_rate.setCurrentIndex(max(vat_rate.findData(row.get("vat_rate", VAT_RATES[0])), 0))
+        net_price = QLineEdit()
+        net_price.setAlignment(Qt.AlignmentFlag.AlignRight)
+        net_value = QLineEdit()
+        net_value.setAlignment(Qt.AlignmentFlag.AlignRight)
+        net_value.setProperty("net_basis", False)
+        self._net_fields[value] = (vat_rate, net_price, net_value)
         remove = QToolButton()
         remove.setText("Usuń")
         remove.clicked.connect(lambda: self._remove_row(remove))
 
-        for field in (quantity, price, value):
+        for field in (quantity, price, value, net_price, net_value):
             field.textEdited.connect(lambda _text, edited=field: _remove_minus(edited))
         name.textChanged.connect(self._update_totals)
         quantity.textChanged.connect(lambda: self._quantity_edited(quantity, price, value))
         price.textChanged.connect(lambda: self._price_edited(quantity, price, value))
         value.textChanged.connect(lambda: self._value_edited(quantity, price, value))
+        net_price.textChanged.connect(lambda: self._net_price_edited(price, value))
+        net_value.textChanged.connect(lambda: self._net_value_edited(value))
+        vat_rate.currentIndexChanged.connect(lambda: self._rate_changed(price, value))
+        self._sync_nets(price, value)
 
         self.table.setCellWidget(index, self.NAME, name)
         self.table.setCellWidget(index, self.CATEGORY, category)
         self.table.setCellWidget(index, self.QUANTITY, quantity)
+        self.table.setCellWidget(index, self.VAT_RATE, vat_rate)
+        self.table.setCellWidget(index, self.NET_PRICE, net_price)
         self.table.setCellWidget(index, self.PRICE, price)
+        self.table.setCellWidget(index, self.NET_VALUE, net_value)
         self.table.setCellWidget(index, self.VALUE, value)
         self.table.setCellWidget(index, self.REMOVE, remove)
         if focus:
@@ -277,24 +329,82 @@ class _ProductRowsMixin:
         except ValueError:
             pass
 
+    def _sync_nets(self, price, value):
+        """Netto wynika z brutto; pole, które użytkownik właśnie wpisuje, zostaje nietknięte."""
+        vat_rate, net_price, net_value = self._net_fields[value]
+        rate = vat_rate.currentData()
+        for gross, net in ((price, net_price), (value, net_value)):
+            if net is self._editing_net:
+                continue
+            try:
+                amount = parse_precise(gross.text())
+            except ValueError:
+                amount = -1
+            self._set_quietly(
+                net, format_precise_input(net_from_gross(amount, rate)) if amount >= 0 else ""
+            )
+
+    def _set_gross_from_net(self, net, gross, value):
+        """Wpisane netto ustawia brutto, a dalej działa zwykłe przeliczanie."""
+        try:
+            amount = parse_precise(net.text())
+        except ValueError:
+            return
+        if amount < 0:
+            return
+        rate = self._net_fields[value][0].currentData()
+        self._editing_net = net
+        try:
+            gross.setText(format_precise_input(gross_from_net(amount, rate)))
+        finally:
+            self._editing_net = None
+
+    def _net_price_edited(self, price, value):
+        self._net_fields[value][2].setProperty("net_basis", True)
+        self._set_gross_from_net(self._net_fields[value][1], price, value)
+
+    def _net_value_edited(self, value):
+        self._net_fields[value][2].setProperty("net_basis", True)
+        self._set_gross_from_net(self._net_fields[value][2], value, value)
+
+    def _rate_changed(self, price, value):
+        """Po wpisaniu netto stawka zmienia brutto; w przeciwnym razie zmienia netto."""
+        _vat_rate, net_price, net_value = self._net_fields[value]
+        if not net_value.property("net_basis"):
+            self._sync_nets(price, value)
+        elif value.property("fixed"):
+            self._set_gross_from_net(net_value, value, value)
+        else:
+            self._set_gross_from_net(net_price, price, value)
+        self._update_totals()
+
     def _quantity_edited(self, quantity, price, value):
         """Ilość przelicza to pole, które użytkownik zmienił jako ostatnie."""
         if value.property("fixed"):
             self._sync_price(quantity, price, value)
         else:
             self._sync_value(quantity, price, value)
+        self._sync_nets(price, value)
         self._update_totals()
 
+    def _keep_net_basis_only_while_editing_net(self, value):
+        if self._editing_net is None:
+            self._net_fields[value][2].setProperty("net_basis", False)
+
     def _price_edited(self, quantity, price, value):
+        self._keep_net_basis_only_while_editing_net(value)
         value.setProperty("fixed", False)
         self._sync_value(quantity, price, value)
+        self._sync_nets(price, value)
         self._update_totals()
 
     def _value_edited(self, quantity, price, value):
         # Puste pole w trakcie pisania niczego nie nadpisuje.
+        self._keep_net_basis_only_while_editing_net(value)
         value.setProperty("fixed", bool(value.text().strip()))
         if value.property("fixed"):
             self._sync_price(quantity, price, value)
+        self._sync_nets(price, value)
         self._update_totals()
 
     def _remove_row(self, button):
@@ -304,6 +414,7 @@ class _ProductRowsMixin:
             self.table.cellWidget(0, self.VALUE).clear()
             self.table.cellWidget(0, self.QUANTITY).setText("1")
             self.table.cellWidget(0, self.PRICE).clear()
+            self.table.cellWidget(0, self.VAT_RATE).setCurrentIndex(0)
         else:
             for index in range(self.table.rowCount()):
                 if self.table.cellWidget(index, self.REMOVE) is button:
@@ -339,6 +450,11 @@ class _ProductRowsMixin:
                     "quantity": self.table.cellWidget(index, self.QUANTITY).text(),
                     "price": self.table.cellWidget(index, self.PRICE).text(),
                     "total": value.text() if value.property("fixed") else "",
+                    "vat_rate": (
+                        self.table.cellWidget(index, self.VAT_RATE).currentData()
+                        if self._has_vat()
+                        else None
+                    ),
                 }
             )
         return rows
@@ -397,9 +513,12 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         if is_new:
             self.wallet_combo = QComboBox()
             self.currencies = {}
+            self.vat_wallets = set()
             for item in list_wallets(db):
                 self.wallet_combo.addItem(item["name"], item["id"])
                 self.currencies[item["id"]] = item["currency"]
+                if item["wallet_type"] == VAT:
+                    self.vat_wallets.add(item["id"])
             if wallet is not None:
                 self.wallet_combo.setCurrentIndex(
                     max(self.wallet_combo.findData(wallet["id"]), 0)
@@ -416,14 +535,20 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
         layout.addWidget(_buttons(self, self.ACCEPT_TEXT, "save"))
-        self.resize(760, 480)
+        self.resize(VAT_DIALOG_WIDTH if self._has_vat() else 760, 480)
         if self.wallet_combo is not None:
             self.wallet_combo.currentIndexChanged.connect(self._update_totals)
+            self.wallet_combo.currentIndexChanged.connect(self._update_vat_columns)
             self.table.cellWidget(0, self.NAME).setFocus()
         self._update_totals()
 
     def set_today(self):
         self.occurred_on.setDate(QDate.currentDate())
+
+    def _has_vat(self):
+        if self.wallet_combo is not None:
+            return self.wallet_combo.currentData() in self.vat_wallets
+        return self.wallet["wallet_type"] == VAT
 
     def selected_wallet_id(self):
         if self.wallet_combo is not None:
@@ -510,9 +635,12 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
 
         self.wallet = QComboBox()
         self.currencies = {}
+        self.vat_wallets = set()
         for wallet in list_wallets(db):
             self.wallet.addItem(wallet["name"], wallet["id"])
             self.currencies[wallet["id"]] = wallet["currency"]
+            if wallet["wallet_type"] == VAT:
+                self.vat_wallets.add(wallet["id"])
         self.wallet.setCurrentIndex(max(self.wallet.findData(data["wallet_id"]), 0))
         self.kind = _kind_combo(data["kind"])
         self.description = QLineEdit(data["description"])
@@ -540,9 +668,13 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
         layout.addWidget(_buttons(self, "Zapisz", "save"))
-        self.resize(760, 560)
+        self.resize(VAT_DIALOG_WIDTH if self._has_vat() else 760, 560)
         self.wallet.currentIndexChanged.connect(self._update_totals)
+        self.wallet.currentIndexChanged.connect(self._update_vat_columns)
         self._update_totals()
+
+    def _has_vat(self):
+        return self.wallet.currentData() in self.vat_wallets
 
     def _currency(self):
         return self.currencies.get(self.wallet.currentData(), "")

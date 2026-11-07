@@ -60,6 +60,25 @@ def to_cents(value_e5):
     return (value_e5 + 500) // 1000
 
 
+def gross_from_net(net, rate):
+    """Brutto z netto przy stawce w procentach; pusta stawka to brak VAT."""
+    if not rate:
+        return net
+    return (net * (100 + rate) + 50) // 100
+
+
+def net_from_gross(gross, rate):
+    """Netto z brutto, zaokrąglone połowę w górę; działa w każdej skali kwot."""
+    if not rate:
+        return gross
+    return (2 * gross * 100 + 100 + rate) // (2 * (100 + rate))
+
+
+def vat_from_gross(gross_cents, rate):
+    """VAT w groszach taki, żeby netto i VAT zawsze sumowały się do brutto."""
+    return gross_cents - net_from_gross(gross_cents, rate)
+
+
 def format_money(cents, currency=""):
     sign = "-" if cents < 0 else ""
     whole, fraction = divmod(abs(cents), 100)

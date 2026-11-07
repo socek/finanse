@@ -7,7 +7,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 
 ## Funkcje
 
-- portfele z własną walutą i saldem początkowym
+- portfele z własną walutą i saldem początkowym, w tym portfele z VAT
 - transakcje z wieloma produktami oraz osobne listy transakcji i produktów według
   dni, z wielu wybranych portfeli naraz, z szukaniem po nazwie i filtrami po dacie,
   kategorii i kwocie
@@ -104,6 +104,11 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
 - `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
 - `operations`, `change_log` – dziennik zmian
+
+W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto
+to wartość pomniejszona o `vat_cents`. Stawki to 23%, 8%, 5%, 0% i zwolnienie. Zestawienie
+VAT sumuje stawki z transakcji wybranego miesiąca, według ich daty, i nie zastępuje
+rozliczenia z księgowością.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

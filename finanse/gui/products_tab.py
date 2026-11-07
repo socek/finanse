@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from ..money import format_money, format_quantity, to_cents
 from ..products import group_products_by_day, load_products
 from ..transactions import get_transaction
+from ..wallets import VAT as WALLET_WITH_VAT
 from ..wallets import get_wallet, list_wallets
 from . import common, shortcuts
 from .day_list import (
@@ -33,6 +34,7 @@ from .day_list import (
 from .dialogs import TransactionDialog
 
 NAME, TRANSACTION, WALLET, CATEGORY, QUANTITY, PRICE, VALUE = range(1, 8)
+VAT_RATE, NET, VAT_AMOUNT = 10, 11, 12  # za kolumnami sum dnia, a na ekranie przed wartością
 
 
 class ProductsTab(QWidget):
@@ -62,6 +64,7 @@ class ProductsTab(QWidget):
         self.tree = DayTree(
             ["Data", "Produkt", "Transakcja", "Portfel", "Kategoria", "Ilość", "Cena", "Wartość"],
             stretch_columns=(NAME, TRANSACTION),
+            extra_headers=("Stawka", "Netto", "VAT"),
         )
         self.tree.currentItemChanged.connect(self._update_buttons)
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_transaction())
@@ -135,6 +138,12 @@ class ProductsTab(QWidget):
         self.title.setText(selection_title(list_wallets(self.db), wallet_ids))
         self.last_transaction.setText(last_transaction_text(self.db, wallet_ids))
         self.tree.setColumnHidden(WALLET, len(wallet_ids) < 2)
+        has_vat = any(
+            wallet["id"] in wallet_ids and wallet["wallet_type"] == WALLET_WITH_VAT
+            for wallet in list_wallets(self.db)
+        )
+        for column in (VAT_RATE, NET, VAT_AMOUNT):
+            self.tree.setColumnHidden(column, not has_vat)
 
         date_from, date_to, filters, notes = self.filter_bar.state()
         products, summary = load_products(self.db, wallet_ids, date_from, date_to, filters)
@@ -177,6 +186,15 @@ class ProductsTab(QWidget):
             ]
         )
         item.setData(0, KEY_ROLE, ("product", product["id"], product["transaction_id"]))
+        if product["wallet_type"] == WALLET_WITH_VAT:
+            rate = product["vat_rate"]
+            net = product["total_cents"] - product["vat_cents"]
+            item.setText(VAT_RATE, "zw." if rate is None else f"{rate}%")
+            # Bez waluty, jak cena: ta lista ma dużo kolumn, a nazwy potrzebują miejsca.
+            item.setText(NET, format_money(net))
+            item.setText(VAT_AMOUNT, format_money(product["vat_cents"]))
+            for column in (VAT_RATE, NET, VAT_AMOUNT):
+                item.setTextAlignment(column, RIGHT)
         common.mark_row_kind(item, income, column_count)
         common.mark_no_category(item, CATEGORY)
         for column in (QUANTITY, PRICE, VALUE):

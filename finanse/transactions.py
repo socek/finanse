@@ -9,13 +9,16 @@ from .money import (
     parse_precise,
     parse_quantity,
     to_cents,
+    vat_from_gross,
 )
+from .wallets import wallet_has_vat
 
 MAX_TEXT_LENGTH = 200
+VAT_RATES = (23, 8, 5, 0)
 EMPTY_ROW = {"name": "", "category": None, "quantity": "1", "price": "", "total": ""}
 
 
-def parse_product_rows(rows, category_ids, required=True):
+def parse_product_rows(rows, category_ids, required=True, has_vat=False):
     """Zwraca (produkty do zapisu, błędy). Puste wiersze pomija."""
     products, errors = [], []
     number = 0
@@ -57,6 +60,12 @@ def parse_product_rows(rows, category_ids, required=True):
             if total_e5 < 0:
                 errors.append(f"Produkt {number}: niepoprawna wartość.")
                 continue
+        # Portfel bez VAT nie zapisuje stawki, nawet jeśli wiersz ją ma, np. z szablonu.
+        vat_rate = row.get("vat_rate") if has_vat else None
+        if vat_rate is not None and vat_rate not in VAT_RATES:
+            errors.append(f"Produkt {number}: niepoprawna stawka VAT.")
+            continue
+        total_cents = to_cents(total_e5)
         products.append(
             {
                 "name": name,
@@ -64,7 +73,9 @@ def parse_product_rows(rows, category_ids, required=True):
                 "quantity_e5": quantity_e5,
                 "unit_price_e5": price_e5,
                 "total_e5": total_e5,
-                "total_cents": to_cents(total_e5),
+                "total_cents": total_cents,
+                "vat_rate": vat_rate,
+                "vat_cents": vat_from_gross(total_cents, vat_rate),
             }
         )
 
@@ -75,7 +86,7 @@ def parse_product_rows(rows, category_ids, required=True):
     return products, errors
 
 
-def validate_transaction(db, kind, occurred_on, description, rows):
+def validate_transaction(db, wallet_id, kind, occurred_on, description, rows):
     errors = []
     description = description.strip()
     if kind not in ("expense", "income"):
@@ -87,7 +98,9 @@ def validate_transaction(db, kind, occurred_on, description, rows):
     if not description or len(description) > MAX_TEXT_LENGTH:
         errors.append(f"Podaj opis (do {MAX_TEXT_LENGTH} znaków).")
     category_ids = {row["id"] for row in db.execute("SELECT id FROM categories")}
-    products, product_errors = parse_product_rows(rows, category_ids)
+    products, product_errors = parse_product_rows(
+        rows, category_ids, has_vat=wallet_has_vat(db, wallet_id)
+    )
     errors += product_errors
     if errors:
         raise ValidationError(errors)
@@ -99,8 +112,8 @@ def insert_products(db, transaction_id, products):
         """
         INSERT INTO products (
             transaction_id, position, name, category_id,
-            quantity_e5, unit_price_e5, total_e5, total_cents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            quantity_e5, unit_price_e5, total_e5, total_cents, vat_rate, vat_cents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -112,6 +125,8 @@ def insert_products(db, transaction_id, products):
                 product["unit_price_e5"],
                 product["total_e5"],
                 product["total_cents"],
+                product.get("vat_rate"),
+                product.get("vat_cents", 0),
             )
             for position, product in enumerate(products)
         ],
@@ -120,7 +135,7 @@ def insert_products(db, transaction_id, products):
 
 def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
     occurred_on, description, products = validate_transaction(
-        db, kind, occurred_on, description, rows
+        db, wallet_id, kind, occurred_on, description, rows
     )
     with db:
         transaction_id = db.execute(
@@ -133,8 +148,11 @@ def create_transaction(db, wallet_id, kind, occurred_on, description, rows):
 
 
 def update_transaction(db, transaction_id, kind, occurred_on, description, rows):
+    wallet_id = db.execute(
+        "SELECT wallet_id FROM transactions WHERE id = ?", (transaction_id,)
+    ).fetchone()["wallet_id"]
     occurred_on, description, products = validate_transaction(
-        db, kind, occurred_on, description, rows
+        db, wallet_id, kind, occurred_on, description, rows
     )
     with db:
         db.execute(
@@ -163,6 +181,7 @@ def get_transaction(db, transaction_id):
             "quantity": format_quantity_input(product["quantity_e5"]),
             "price": format_precise_input(product["unit_price_e5"]),
             "total": format_precise_input(product["total_e5"]),
+            "vat_rate": product["vat_rate"],
         }
         for product in db.execute(
             "SELECT * FROM products WHERE transaction_id = ? ORDER BY position",

@@ -130,6 +130,7 @@ def test_edit_replaces_products_and_keeps_import_hash(db):
     data = get_transaction(db, transaction)
     assert data["rows"][0] == {
         "name": "Chleb", "category": food, "quantity": "1", "price": "5,00", "total": "5,00",
+        "vat_rate": None,
     }  # fmt: skip
 
     update_transaction(
