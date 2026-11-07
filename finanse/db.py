@@ -5,6 +5,8 @@ from datetime import datetime
 from importlib import resources
 from pathlib import Path
 
+from .errors import ValidationError
+
 STARTUP_BACKUPS_KEPT = 30
 _STARTUP_BACKUP_NAME = re.compile(r"finanse-[0-9]{8}-[0-9]{6}\.db")
 
@@ -118,3 +120,88 @@ def backup_on_startup(path, keep=STARTUP_BACKUPS_KEPT):
     for old in backups[:-keep]:
         old.unlink()
     return target
+
+
+RESTORE_COPY_INFIX = "przed-przywroceniem"
+
+
+def latest_version():
+    return _migrations()[-1][0]
+
+
+def check_backup(source):
+    """Sprawdza, czy plik jest kopią bazy Finanse; zwraca wersję jej schematu.
+
+    Zgłasza ValidationError z opisem dla użytkownika.
+    """
+    source = Path(source)
+    if not source.is_file():
+        raise ValidationError(f"Nie ma pliku {source}.")
+    with open(source, "rb") as file:
+        if file.read(16) != b"SQLite format 3\x00":
+            raise ValidationError(f"Plik {source.name} nie jest bazą danych SQLite.")
+    try:
+        copy = sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            if copy.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise ValidationError(f"Kopia {source.name} jest uszkodzona.")
+            version = copy.execute("PRAGMA user_version").fetchone()[0]
+            has_wallets = copy.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wallets'"
+            ).fetchone()
+        finally:
+            copy.close()
+    except sqlite3.Error as error:
+        raise ValidationError(f"Nie da się odczytać kopii {source.name}: {error}") from error
+    if not version or not has_wallets:
+        raise ValidationError(f"Plik {source.name} nie jest kopią bazy Finanse.")
+    if version > latest_version():
+        raise ValidationError(
+            f"Kopia {source.name} pochodzi z nowszej wersji aplikacji"
+            f" (schemat {version}, ta wersja zna {latest_version()})."
+        )
+    return version
+
+
+def _copy_into(source_path, connection):
+    source = sqlite3.connect(f"{Path(source_path).resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        source.backup(connection)
+    finally:
+        source.close()
+
+
+def restore_backup(connection, source):
+    """Zastępuje zawartość otwartej bazy kopią i migruje ją do bieżącej wersji.
+
+    Połączenie zostaje otwarte i od razu widzi przywrócone dane. Przed zmianą
+    zapisuje obecną bazę obok niej, żeby dało się wrócić; zwraca ścieżkę tej kopii.
+    Gdy migracja kopii się nie uda, przywraca poprzednią zawartość.
+    """
+    path = Path(connection.execute("PRAGMA database_list").fetchone()["file"])
+    source = Path(source)
+    if source.resolve() == path.resolve():
+        raise ValidationError("To jest plik otwartej bazy, a nie kopia.")
+    check_backup(source)
+    if connection.in_transaction:
+        raise ValidationError("Baza jest w trakcie zapisu. Spróbuj ponownie.")
+
+    safety = path.with_name(
+        f"{path.name}.{RESTORE_COPY_INFIX}-{datetime.now():%Y%m%d-%H%M%S}"
+    )
+    target = sqlite3.connect(safety)
+    try:
+        connection.backup(target)
+    finally:
+        target.close()
+
+    _copy_into(source, connection)
+    try:
+        init_db(str(path))
+    except sqlite3.Error as error:
+        _copy_into(safety, connection)
+        raise ValidationError(
+            f"Nie udało się zaktualizować kopii do bieżącej wersji: {error}"
+            "\nDane zostały bez zmian."
+        ) from error
+    return safety

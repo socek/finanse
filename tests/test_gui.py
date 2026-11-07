@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import date, timedelta
 
 import pytest
@@ -1307,6 +1308,51 @@ def test_files_tab_lists_files_with_sums(db, errors, tmp_path):
     (tmp_path / "nowy.txt").write_bytes(b"x")
     window.files_dialog.open_page()
     assert "plików: 4" in window.files.total.text()
+
+
+def test_files_tab_restores_selected_backup(db, errors, tmp_path):
+    from finanse.db import backup_on_startup
+
+    create_wallet(db, "Stary")
+    backup_on_startup(tmp_path / "test.db")
+    create_wallet(db, "Nowy")
+    window = MainWindow(db)
+    assert window.wallets.wallet_list.count() == 2
+    window.files_dialog.open_page()
+    tree = window.files.tree
+    assert not window.files.restore_button.isEnabled()
+    tree.setCurrentItem(tree.topLevelItem(0).child(0))  # plik samej bazy
+    assert not window.files.restore_button.isEnabled()
+    group = next(
+        tree.topLevelItem(i)
+        for i in range(tree.topLevelItemCount())
+        if tree.topLevelItem(i).text(0).startswith("Kopie przy starcie")
+    )
+    tree.setCurrentItem(group.child(0))
+    assert window.files.restore_button.isEnabled()
+
+    window.files.restore_button.click()
+    assert "Przywrócono kopię" in errors[-1]
+    assert window.wallets.wallet_list.count() == 1  # widok przeczytał dane od nowa
+    assert [w["name"] for w in list_wallets(db)] == ["Stary"]
+    groups = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
+    assert "Kopie przed migracjami i ręczne (plików: 1)" in groups
+
+
+def test_files_tab_restore_can_be_cancelled_and_reports_errors(db, errors, monkeypatch, tmp_path):
+    create_wallet(db, "A")
+    window = MainWindow(db)
+    note = tmp_path / "notatka.txt"
+    note.write_text("x")
+    assert not window.files.restore(note)
+    assert "nie jest bazą danych SQLite" in errors[-1]
+
+    monkeypatch.setattr(common, "confirm", lambda *_a, **_k: False)
+    copy = tmp_path / "kopia.db"
+    db.backup(sqlite3.connect(copy))
+    create_wallet(db, "B")
+    assert not window.files.restore(copy)
+    assert len(list_wallets(db)) == 2
 
 
 def test_about_tab_shows_version_and_changelog(db, errors):

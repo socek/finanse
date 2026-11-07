@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
 
         # Rzadziej używane strony mają własne okna, otwierane z menu.
         self.history = HistoryTab(db)
-        self.files = FilesTab(db)
+        self.files = FilesTab(db, self.after_restore)
         self.settings = SettingsTab(db, self.refresh_all_tabs)
         self.about = AboutTab()
         self.history_dialog = PageDialog(self.history, "Historia zmian danych", (900, 640), self)
@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
         self._item(file_menu, "Reguły importu…", self.show_import_rules)
         file_menu.addSeparator()
         self._item(file_menu, "Kopie i pliki danych…", self.files_dialog.open_page)
+        self._item(file_menu, "Przywróć kopię bazy z pliku…", self.files.restore_from_file)
         file_menu.addSeparator()
         self._item(file_menu, "Zakończ", act["quit"], "quit")
 
@@ -387,6 +388,12 @@ class MainWindow(QMainWindow):
             self.tabs.widget(index).refresh()
         if hasattr(self, "menu_items"):
             self.update_menus()
+
+    def after_restore(self):
+        """Po przywróceniu kopii każdy widok i licznik zaległości czyta dane od nowa."""
+        self.refresh_all_tabs()
+        self.show_due_count(count_due(self.db))
+        self.history.refresh()
 
     def new_transaction(self):
         """Działa z każdej zakładki, a po zapisie odświeża tę, która jest widoczna."""

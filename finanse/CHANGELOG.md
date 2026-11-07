@@ -2,6 +2,9 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Przywracanie kopii bazy z okna Kopie i pliki danych albo z dowolnego pliku, bez zamykania
+  aplikacji. Kopia jest najpierw sprawdzana, starsza wersja od razu migrowana, a obecne dane
+  zapisywane jako `finanse.db.przed-przywroceniem-…`, więc przywrócenie da się cofnąć.
 - Reguły importu CSV: gdy opis z wyciągu zawiera tekst reguły, transakcja dostaje kategorię,
   nazwę produktu i tagi. Dopasowanie pomija wielkość liter i polskie znaki, reguła może
   dotyczyć tylko wydatków lub przychodów, a wygrywa pierwsza z listy. Podgląd importu pokazuje

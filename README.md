@@ -28,7 +28,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   w raporcie
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami i regułami, które
   nadają kategorię, nazwę produktu i tagi według opisu
-- historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
+- historia zmian danych, automatyczna kopia bazy przy każdym uruchomieniu i przywracanie kopii z poziomu aplikacji
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
 - pasek menu ze wszystkimi działaniami i pięć zakładek z danymi; historia, pliki, ustawienia
@@ -86,11 +86,20 @@ również usunięte dane. Nie ma jeszcze przycisku cofania zmian. Nowa kolumna l
 wymaga przebudowy triggerów w migracji.
 
 Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `~/.finanse/backups/`
-i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
-`~/.finanse/finanse.db`.
+i zostawia 30 najnowszych.
 
 Okno **Plik → Kopie i pliki danych** pokazuje pliki z katalogu bazy i podkatalogu `backups`, ich rozmiar
-oraz sumy dla każdej grupy i całości.
+oraz sumy dla każdej grupy i całości. Aby wrócić do kopii, zaznacz ją i kliknij **Przywróć
+zaznaczoną kopię** albo kliknij ją dwukrotnie. Kopię spoza tych katalogów wskażesz przyciskiem
+**Przywróć z pliku** lub z menu **Plik → Przywróć kopię bazy z pliku**.
+
+- Przed przywróceniem aplikacja sprawdza, czy plik jest nieuszkodzoną bazą Finanse i czy nie
+  pochodzi z nowszej wersji aplikacji.
+- Obecne dane zapisuje jako `~/.finanse/finanse.db.przed-przywroceniem-RRRRMMDD-GGMMSS`, więc
+  przywrócenie da się cofnąć, przywracając ten plik. Te kopie nie są usuwane automatycznie.
+- Kopię ze starszej wersji aplikacji od razu aktualizuje migracjami. Gdy migracja się nie
+  uda, dane zostają bez zmian.
+- Historia zmian po przywróceniu pochodzi z kopii, więc nie zawiera samego przywrócenia.
 
 ## Import z banku
 
