@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 
-from .money import format_money, format_quantity
+from .money import format_money, format_precise_input, format_quantity_input
 
 MAX_ROWS = 2000
 ACTIONS = {"insert": "Dodano", "update": "Zmieniono", "delete": "Usunięto"}
@@ -38,8 +38,17 @@ def _kind(value, _names):
     return {"income": "przychód", "expense": "wydatek"}.get(value, value)
 
 
-def _quantity(value, _names):
-    return format_quantity(value)
+def _precise(value, _names):
+    return format_precise_input(value)
+
+
+def _precise_quantity(value, _names):
+    return format_quantity_input(value)
+
+
+def _old_quantity(value, _names):
+    """Starsze wpisy dziennika mają ilość w tysięcznych."""
+    return format_quantity_input(value * 100)
 
 
 def _wallet(value, names):
@@ -61,8 +70,11 @@ def _plain(value, _names):
 _PRODUCT_FIELDS = (
     ("name", "nazwa", _text, "brak"),
     ("category_id", "kategoria", _category, "bez kategorii"),
-    ("quantity_milli", "ilość", _quantity, "brak"),
+    ("quantity_e5", "ilość", _precise_quantity, "brak"),
+    ("quantity_milli", "ilość", _old_quantity, "brak"),
+    ("unit_price_e5", "cena", _precise, "brak"),
     ("unit_price_cents", "cena", _money, "brak"),
+    ("total_e5", "wartość", _precise, "brak"),
     ("total_cents", "wartość", _money, "brak"),
 )
 FIELDS = {
@@ -121,6 +133,15 @@ def _value(field, values, names):
     return empty if value is None else formatter(value, names)
 
 
+def _fields(table, values):
+    """Pola do opisania; wartość w groszach powtarzałaby tę dokładną."""
+    return [
+        field
+        for field in FIELDS[table]
+        if not (field[0] == "total_cents" and "total_e5" in values)
+    ]
+
+
 def _describe(row, names):
     """Jedna linia opisu albo None, gdy zmieniły się tylko pola techniczne."""
     table = row["table_name"]
@@ -131,13 +152,13 @@ def _describe(row, names):
     if row["action"] == "update":
         changes = [
             f"{field[1]}: {_value(field, old, names)} → {_value(field, new, names)}"
-            for field in FIELDS[table]
+            for field in _fields(table, current)
             if old.get(field[0]) != new.get(field[0])
         ]
         return f"{title}: {', '.join(changes)}" if changes else None
     details = [
         f"{field[1]}: {_value(field, current, names)}"
-        for field in FIELDS[table]
+        for field in _fields(table, current)
         # Starsze wpisy dziennika mają kolumny, których już nie ma, i na odwrót.
         if field[0] != TITLE_FIELDS[table] and field[0] in current
     ]

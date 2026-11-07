@@ -138,12 +138,12 @@ def test_recurring_amount_becomes_a_product(tmp_path):
     columns = {row["name"] for row in db.execute("PRAGMA table_info(recurring_transactions)")}
     assert "amount_cents" not in columns and "category_id" not in columns
     rows = db.execute(
-        "SELECT recurring_id, name, category_id, quantity_milli, unit_price_cents, total_cents"
+        "SELECT recurring_id, name, category_id, quantity_e5, unit_price_e5, total_e5, total_cents"
         " FROM recurring_products ORDER BY recurring_id"
     ).fetchall()
     assert [tuple(row) for row in rows] == [
-        (1, "Z kwotą", 100, 1000, 5000, 5000),
-        (3, "Woda", None, 1000, 700, 700),  # produkty mają pierwszeństwo przed starą kwotą
+        (1, "Z kwotą", 100, 100000, 5000000, 5000000, 5000),
+        (3, "Woda", None, 100000, 700000, 700000, 700),  # produkty mają pierwszeństwo
     ]
     remaining = db.execute(
         "SELECT id, remaining FROM recurring_transactions ORDER BY id"
@@ -163,3 +163,66 @@ def test_recurring_amount_becomes_a_product(tmp_path):
     backup = sqlite3.connect(f"{path}.backup-v5")
     assert backup.execute("SELECT amount_cents FROM recurring_transactions WHERE id = 1").fetchone() == (5000,)
     backup.close()
+
+
+def test_five_decimal_migration_keeps_every_product(tmp_path):
+    path = str(tmp_path / "old.db")
+    connection = sqlite3.connect(path)
+    names = sorted(
+        file.name
+        for file in resources.files("finanse").joinpath("migrations").iterdir()
+        if file.name.endswith(".sql") and int(file.name[:3]) <= 6
+    )
+    for name in names:
+        connection.executescript(_script(name))
+    connection.executescript(
+        """
+        INSERT INTO wallets (id, name, initial_balance_cents) VALUES (1, 'A', 10000);
+        INSERT INTO categories (id, name) VALUES (100, 'Psy');
+        INSERT INTO transactions (id, wallet_id, kind, occurred_on, description)
+            VALUES (1, 1, 'expense', '2026-11-01', 'Zakupy');
+        INSERT INTO products
+            (id, transaction_id, position, name, category_id, quantity_milli,
+             unit_price_cents, total_cents)
+        VALUES
+            (7, 1, 0, 'Eksploatacja', 100, 72380, 857, 62030),
+            (8, 1, 1, 'Ser', NULL, 3000, 333, 1000),
+            (9, 1, 2, 'Pół', NULL, 1255, 100, 126);
+        INSERT INTO recurring_transactions (id, wallet_id, kind, description)
+            VALUES (1, 1, 'expense', 'Media');
+        INSERT INTO recurring_products
+            (id, recurring_id, position, name, quantity_milli, unit_price_cents, total_cents)
+            VALUES (5, 1, 0, 'Woda', 2500, 400, 1000);
+        PRAGMA user_version = 6;
+        """
+    )
+    connection.commit()
+    connection.close()
+    init_db(path)
+
+    db = connect(path)
+    rows = db.execute(
+        "SELECT id, position, name, category_id, quantity_e5, unit_price_e5, total_e5, total_cents"
+        " FROM products ORDER BY id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (7, 0, "Eksploatacja", 100, 7238000, 857000, 62030000, 62030),
+        (8, 1, "Ser", None, 300000, 333000, 1000000, 1000),
+        (9, 2, "Pół", None, 125500, 100000, 126000, 126),
+    ]
+    recurring = db.execute(
+        "SELECT id, quantity_e5, unit_price_e5, total_e5, total_cents FROM recurring_products"
+    ).fetchone()
+    assert tuple(recurring) == (5, 250000, 400000, 1000000, 1000)
+    assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+    indexes = {row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert {"idx_products_transaction", "idx_products_category", "idx_recurring_products"} <= indexes
+
+    # Klucze obce działają na przebudowanych tabelach.
+    with db:
+        db.execute("DELETE FROM categories WHERE id = 100")
+    assert db.execute("SELECT category_id FROM products WHERE id = 7").fetchone()[0] is None
+    with db:
+        db.execute("DELETE FROM transactions WHERE id = 1")
+    assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
+    db.close()

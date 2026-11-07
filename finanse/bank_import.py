@@ -11,6 +11,7 @@ from .csv_import import (
     read_rows,
 )
 from .errors import ValidationError
+from .money import PRECISE_UNIT
 from .transactions import insert_products
 
 
@@ -108,8 +109,9 @@ def import_rows(db, wallet_id, rows, mapping, category_id=None):
                     {
                         "name": record["description"],
                         "category_id": category_id,
-                        "quantity_milli": 1000,
-                        "unit_price_cents": abs(cents),
+                        "quantity_e5": PRECISE_UNIT,
+                        "unit_price_e5": abs(cents) * 1000,
+                        "total_e5": abs(cents) * 1000,
                         "total_cents": abs(cents),
                     }
                 ],

@@ -4,6 +4,8 @@
 
 - Kategorię produktu można wpisać z klawiatury, z przybliżonym wyszukiwaniem. Wejście na
   pole zaznacza jego tekst, więc pisanie zaczyna się od zera.
+- Ilość, cena i wartość produktu mogą mieć do 5 miejsc po przecinku. Listy pokazują je
+  zaokrąglone do 2 miejsc, a salda i raporty liczą wartości zaokrąglone do groszy.
 - Minus wpisany lub wklejony w ilość, cenę albo wartość produktu jest usuwany.
 - Okno nowej transakcji otwiera się z kursorem w nazwie pierwszego produktu.
 - Wydatki i przychody mają inne tło wiersza na listach transakcji i produktów.

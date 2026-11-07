@@ -3,11 +3,12 @@ from datetime import date
 from .errors import ValidationError
 from .money import (
     MAX_TRANSACTION_CENTS,
-    format_money_input,
-    format_quantity,
+    format_precise_input,
+    format_quantity_input,
     line_total,
-    parse_money,
+    parse_precise,
     parse_quantity,
+    to_cents,
 )
 
 MAX_TEXT_LENGTH = 200
@@ -34,35 +35,36 @@ def parse_product_rows(rows, category_ids, required=True):
             errors.append(f"Produkt {number}: niepoprawna kategoria.")
             continue
         try:
-            quantity_milli = parse_quantity(quantity)
+            quantity_e5 = parse_quantity(quantity)
         except ValueError:
             errors.append(f"Produkt {number}: niepoprawna ilość.")
             continue
         try:
-            price_cents = parse_money(price)
+            price_e5 = parse_precise(price)
         except ValueError:
-            price_cents = -1
-        if price_cents < 0:
+            price_e5 = -1
+        if price_e5 < 0:
             errors.append(f"Produkt {number}: niepoprawna cena.")
             continue
         # Podana wartość ma pierwszeństwo: cena wyliczona z niej jest zaokrąglona,
         # więc ilość razy cena nie musi dać dokładnie tej samej kwoty.
-        total_cents = line_total(quantity_milli, price_cents)
+        total_e5 = line_total(quantity_e5, price_e5)
         if total:
             try:
-                total_cents = parse_money(total)
+                total_e5 = parse_precise(total)
             except ValueError:
-                total_cents = -1
-            if total_cents < 0:
+                total_e5 = -1
+            if total_e5 < 0:
                 errors.append(f"Produkt {number}: niepoprawna wartość.")
                 continue
         products.append(
             {
                 "name": name,
                 "category_id": category,
-                "quantity_milli": quantity_milli,
-                "unit_price_cents": price_cents,
-                "total_cents": total_cents,
+                "quantity_e5": quantity_e5,
+                "unit_price_e5": price_e5,
+                "total_e5": total_e5,
+                "total_cents": to_cents(total_e5),
             }
         )
 
@@ -97,8 +99,8 @@ def insert_products(db, transaction_id, products):
         """
         INSERT INTO products (
             transaction_id, position, name, category_id,
-            quantity_milli, unit_price_cents, total_cents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            quantity_e5, unit_price_e5, total_e5, total_cents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -106,8 +108,9 @@ def insert_products(db, transaction_id, products):
                 position,
                 product["name"],
                 product["category_id"],
-                product["quantity_milli"],
-                product["unit_price_cents"],
+                product["quantity_e5"],
+                product["unit_price_e5"],
+                product["total_e5"],
                 product["total_cents"],
             )
             for position, product in enumerate(products)
@@ -157,9 +160,9 @@ def get_transaction(db, transaction_id):
         {
             "name": product["name"],
             "category": product["category_id"],
-            "quantity": format_quantity(product["quantity_milli"]),
-            "price": format_money_input(product["unit_price_cents"]),
-            "total": format_money_input(product["total_cents"]),
+            "quantity": format_quantity_input(product["quantity_e5"]),
+            "price": format_precise_input(product["unit_price_e5"]),
+            "total": format_precise_input(product["total_e5"]),
         }
         for product in db.execute(
             "SELECT * FROM products WHERE transaction_id = ? ORDER BY position",

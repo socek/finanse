@@ -231,6 +231,27 @@ def test_history_shows_old_entries_and_skips_missing_columns(db):
     assert "licznik: 2" in new_line
 
 
+def test_history_shows_old_and_precise_product_values(db):
+    wallet = create_wallet(db, "A")
+    create_transaction(db, wallet, "expense", "2026-11-05", "Paliwo", [
+        {"name": "Benzyna", "category": None, "quantity": "2,12345", "price": "1,00001"},
+    ])  # fmt: skip
+    with db:
+        db.execute(
+            "INSERT INTO change_log (table_name, row_id, action, new_values)"
+            " VALUES ('products', 77, 'insert', ?)",
+            (json.dumps({"id": 77, "transaction_id": 1, "position": 0, "name": "Stary",
+                         "category_id": None, "quantity_milli": 1500,
+                         "unit_price_cents": 200, "total_cents": 300}),),
+        )  # fmt: skip
+    text = history_text(db).replace("\xa0", " ")
+    new_line = next(line for line in text.splitlines() if "„Benzyna”" in line)
+    assert "ilość: 2,12345" in new_line and "cena: 1,00001" in new_line
+    assert new_line.count("wartość:") == 1
+    old_line = next(line for line in text.splitlines() if "„Stary”" in line)
+    assert "ilość: 1,5" in old_line and "cena: 2,00" in old_line and "wartość: 3,00" in old_line
+
+
 def test_history_is_limited_and_says_so(db):
     wallet = create_wallet(db, "A")
     for _ in range(3):

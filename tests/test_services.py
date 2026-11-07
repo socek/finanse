@@ -86,9 +86,9 @@ def test_transaction_with_many_products_updates_balance(db):
     wallet = create_wallet(db, "A", "PLN", "100")
     add(db, wallet, ("Chleb", "2", "4,50"), ("Ser", "0,5", "39,99"), ("", "1", ""))
     assert db.execute(
-        "SELECT name, quantity_milli, unit_price_cents, total_cents"
+        "SELECT name, quantity_e5, unit_price_e5, total_cents"
         " FROM products ORDER BY position"
-    ).fetchall()[1][:] == ("Ser", 500, 3999, 2000)
+    ).fetchall()[1][:] == ("Ser", 50000, 3999000, 2000)
     assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 2
     assert balance(db, wallet) == 7100
     add(db, wallet, ("Zwrot", "1", "10"), kind="income")
@@ -377,8 +377,8 @@ def test_given_value_wins_over_rounded_price_and_survives_edit(db):
     transaction = create_transaction(db, wallet, "expense", "2026-11-05", "Zakupy", [
         {"name": "Ser", "category": None, "quantity": "3", "price": "3,33", "total": "10"},
     ])  # fmt: skip
-    row = db.execute("SELECT unit_price_cents, total_cents FROM products").fetchone()
-    assert tuple(row) == (333, 1000)
+    row = db.execute("SELECT unit_price_e5, total_e5, total_cents FROM products").fetchone()
+    assert tuple(row) == (333000, 1000000, 1000)
     assert balance(db, wallet) == 9000
 
     rows = get_transaction(db, transaction)["rows"]
@@ -415,6 +415,48 @@ def test_balance_as_of_date_includes_that_day(db):
     assert balances() == balances("2026-12-31") == {"A": 5400, "B": 4000}
     assert balances("") == balances()
     assert get_wallet(db, wallet)["balance_cents"] == 5400
+
+
+def test_five_decimals_are_stored_but_money_counts_in_grosze(db):
+    wallet = create_wallet(db, "A", "PLN", "100")
+    transaction = create_transaction(db, wallet, "expense", "2026-11-05", "Paliwo", [
+        {"name": "Benzyna", "category": None, "quantity": "35,89123", "price": "6,19123"},
+        {"name": "Płyn", "category": None, "quantity": "1", "price": "1", "total": "0,00499"},
+    ])  # fmt: skip
+    rows = db.execute(
+        "SELECT quantity_e5, unit_price_e5, total_e5, total_cents FROM products ORDER BY position"
+    ).fetchall()
+    assert rows[0]["quantity_e5"] == 3589123 and rows[0]["unit_price_e5"] == 619123
+    exact = (3589123 * 619123 + 50000) // 100000
+    assert rows[0]["total_e5"] == exact
+    assert rows[0]["total_cents"] == (exact + 500) // 1000
+    assert (rows[1]["total_e5"], rows[1]["total_cents"]) == (499, 0)
+    assert balance(db, wallet) == 10000 - rows[0]["total_cents"]
+
+    # Formularz odczytuje dokładne wartości, a zapis ich nie zmienia.
+    data = get_transaction(db, transaction)["rows"]
+    assert (data[0]["quantity"], data[0]["price"]) == ("35,89123", "6,19123")
+    assert data[1]["total"] == "0,00499"
+    update_transaction(db, transaction, "expense", "2026-11-05", "Paliwo", data)
+    again = db.execute(
+        "SELECT quantity_e5, unit_price_e5, total_e5, total_cents FROM products ORDER BY position"
+    ).fetchall()
+    assert [tuple(row) for row in again] == [tuple(row) for row in rows]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("quantity", "1,123456", "niepoprawna ilość"),
+        ("price", "1,123456", "niepoprawna cena"),
+        ("total", "1,123456", "niepoprawna wartość"),
+    ],
+)
+def test_six_decimals_are_rejected(db, field, value, message):
+    wallet = create_wallet(db, "A")
+    row = {"name": "X", "category": None, "quantity": "1", "price": "1", field: value}
+    with pytest.raises(ValidationError, match=message):
+        create_transaction(db, wallet, "expense", "2026-11-05", "Zakupy", [row])
 
 
 def test_transfer_moves_money(db):

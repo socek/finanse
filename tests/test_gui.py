@@ -473,16 +473,16 @@ def test_rounded_price_keeps_entered_value_when_saved(db, errors):
     dialog.table.cellWidget(0, dialog.NAME).setText("Ser")
     quantity.setText("3")
     value.setText("10")
-    assert price.text() == "3,33"
+    assert price.text() == "3,33333"
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
-    row = db.execute("SELECT unit_price_cents, total_cents FROM products").fetchone()
-    assert tuple(row) == (333, 1000)
+    row = db.execute("SELECT unit_price_e5, total_e5, total_cents FROM products").fetchone()
+    assert tuple(row) == (333333, 1000000, 1000)
 
     # Ponowne otwarcie i zapis nie zmieniają wartości na 9,99.
     edit = TransactionDialog(db, get_wallet(db, 1), dialog.transaction_id)
     assert _cells(edit)[2].text() == "10,00"
-    assert _cells(edit)[1].text() == "3,33"
+    assert _cells(edit)[1].text() == "3,33333"
     assert "10,00" in edit.total.text()
     edit.accept()
     assert db.execute("SELECT total_cents FROM products").fetchone()[0] == 1000
@@ -564,7 +564,7 @@ def test_value_works_in_recurring_dialog(db, errors):
     dialog.table.cellWidget(0, dialog.NAME).setText("Woda")
     quantity.setText("3")
     value.setText("10")
-    assert price.text() == "3,33"
+    assert price.text() == "3,33333"
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
     payment = PaymentDialog(db, get_wallet(db, 1), dialog.recurring_id)
@@ -2217,8 +2217,8 @@ def test_calculations_use_value_without_minus(db, errors):
     dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
-    row = db.execute("SELECT quantity_milli, unit_price_cents, total_cents FROM products").fetchone()
-    assert tuple(row) == (2000, 1500, 3000)
+    row = db.execute("SELECT quantity_e5, unit_price_e5, total_cents FROM products").fetchone()
+    assert tuple(row) == (200000, 1500000, 3000)
 
 
 def test_minus_stays_in_product_name_and_description(db, errors):
@@ -2240,6 +2240,63 @@ def test_minus_is_removed_in_recurring_dialog_too(db, errors):
     QTest.keyClicks(field, "-5")
     assert field.text() == "5"
     dialog.close()
+
+
+def test_dialog_accepts_five_decimals_and_lists_show_two(db, errors):
+    wallet = create_wallet(db, "A")
+    dialog = TransactionDialog(db, get_wallet(db, wallet))
+    dialog.description.setText("Paliwo")
+    dialog.table.cellWidget(0, dialog.NAME).setText("Benzyna")
+    quantity, price, value = _cells(dialog)
+    quantity.setText("35,89123")
+    price.setText("6,19123")
+    assert value.text().startswith("222,")
+    full_value = value.text()
+    assert len(full_value.split(",")[1]) == 5
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+    # Edycja pokazuje pełną dokładność.
+    edit = TransactionDialog(db, get_wallet(db, wallet), dialog.transaction_id)
+    assert (_cells(edit)[0].text(), _cells(edit)[1].text()) == ("35,89123", "6,19123")
+    assert _cells(edit)[2].text() == full_value
+
+    # Listy pokazują 2 miejsca, również kwotę i saldo.
+    tree = ProductsTab(db).tree
+    row = tree.topLevelItem(0).child(0)
+    assert row.text(5) == "35,89"
+    assert row.text(6) == "6,19"
+    amount = row.text(7).replace("\xa0", " ")
+    assert amount.startswith("−222,") and amount.endswith(" PLN")
+    assert len(amount.split(",")[1].split()[0]) == 2
+    wallets = WalletsTab(db)
+    day = wallets.tree.topLevelItem(0)
+    assert len(day.child(0).text(4).split(",")[1].split("\xa0")[0]) == 2
+
+
+def test_value_with_five_decimals_counts_rounded_in_total(db, errors):
+    dialog = _new_transaction_dialog(db)
+    quantity, price, value = _cells(dialog)
+    value.setText("10,12345")
+    assert price.text() == "10,12345"
+    assert "10,12" in dialog.total.text()
+    assert "12345" not in dialog.total.text()
+
+
+def test_old_rounded_value_still_follows_quantity_and_price(db, errors):
+    """Wartość zaokrąglona do groszy przed zmianą nie staje się wartością stałą."""
+    wallet = create_wallet(db, "A")
+    transaction = create_transaction(db, wallet, "expense", "2026-11-05", "Czynsz", [
+        {"name": "Eksploatacja", "category": None, "quantity": "72,38", "price": "8,57",
+         "total": "620,30"},
+    ])  # fmt: skip
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    quantity, price, value = _cells(edit)
+    assert value.text() == "620,30"
+    assert not value.property("fixed")
+    quantity.setText("1")
+    assert price.text() == "8,57"
+    assert value.text() == "8,57"
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):

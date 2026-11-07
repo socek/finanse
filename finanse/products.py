@@ -32,8 +32,8 @@ def load_products(db, wallet_ids, date_from="", date_to="", filters=EntryFilters
         args.append(date_to)
     rows = db.execute(
         f"""
-        SELECT p.id, p.transaction_id, p.name, p.category_id, p.quantity_milli,
-               p.unit_price_cents, p.total_cents,
+        SELECT p.id, p.transaction_id, p.name, p.category_id, p.quantity_e5,
+               p.unit_price_e5, p.total_cents,
                c.name AS category_name,
                t.kind, t.occurred_on, t.description,
                w.name AS wallet_name, w.currency

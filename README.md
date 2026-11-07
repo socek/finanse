@@ -110,5 +110,7 @@ plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.
 Przelewy nie liczą się do przychodów ani wydatków w raportach. Portfela z przelewami
 nie można usunąć, dopóki ich nie usuniesz, bo zmieniłoby to saldo drugiego portfela.
 
-Kwoty są przechowywane w groszach, a ilości w tysięcznych częściach jednostki,
-zawsze jako liczby całkowite.
+Ilość, cena i wartość produktu są przechowywane w stutysięcznych częściach, czyli
+z 5 miejscami po przecinku. Salda, raporty i listy korzystają z wartości produktu
+zaokrąglonej do groszy, a pozostałe kwoty są zapisywane w groszach, zawsze jako liczby
+całkowite.

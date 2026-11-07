@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..money import format_money, format_quantity
+from ..money import format_money, format_quantity, to_cents
 from ..products import group_products_by_day, load_products
 from ..transactions import get_transaction
 from ..wallets import get_wallet, list_wallets
@@ -171,8 +171,8 @@ class ProductsTab(QWidget):
                 product["description"],
                 product["wallet_name"],
                 product["category_name"] or "Bez kategorii",
-                format_quantity(product["quantity_milli"]),
-                format_money(product["unit_price_cents"]),
+                format_quantity(product["quantity_e5"]),
+                format_money(to_cents(product["unit_price_e5"])),
                 f"{'+' if income else '−'}{value}",
             ]
         )

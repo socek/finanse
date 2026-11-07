@@ -23,9 +23,11 @@ from ..errors import ValidationError
 from ..money import (
     format_money,
     format_money_input,
+    format_precise_input,
     line_total,
-    parse_money,
+    parse_precise,
     parse_quantity,
+    to_cents,
     unit_price,
 )
 from ..recurring import (
@@ -205,8 +207,7 @@ class _ProductRowsMixin:
         computed = self._line_value(quantity.text(), price.text())
         stored = row.get("total", "")
         value.setText(stored or computed)
-        # Wartość jest stała, gdy nie wynika z ilości i ceny, np. 10,00 przy 3 sztukach.
-        value.setProperty("fixed", bool(stored) and stored != computed)
+        value.setProperty("fixed", self._is_fixed_value(stored, computed, price.text()))
         remove = QToolButton()
         remove.setText("Usuń")
         remove.clicked.connect(lambda: self._remove_row(remove))
@@ -229,13 +230,30 @@ class _ProductRowsMixin:
             self._update_totals()
 
     @staticmethod
+    def _is_fixed_value(stored, computed, price):
+        """Czy wartość nie wynika z ilości i ceny, np. 10,00 przy 3 sztukach."""
+        if not stored or stored == computed:
+            return False
+        if not computed:
+            return True
+        # Dane sprzed 5 miejsc po przecinku mają cenę i wartość zaokrąglone do groszy, więc
+        # 72,38 x 8,57 = 620,2966 zapisane jako 620,30 nadal wynika z ilości i ceny.
+        stored_e5, computed_e5 = parse_precise(stored), parse_precise(computed)
+        rounded_legacy = (
+            parse_precise(price) % 1000 == 0
+            and stored_e5 % 1000 == 0
+            and to_cents(computed_e5) * 1000 == stored_e5
+        )
+        return not rounded_legacy
+
+    @staticmethod
     def _line_value(quantity, price):
         """Wartość z ilości i ceny jako tekst; pusty, gdy któreś pole jest niepoprawne."""
         try:
-            cents = parse_money(price)
-            if cents < 0:
+            price_e5 = parse_precise(price)
+            if price_e5 < 0:
                 return ""
-            return format_money_input(line_total(parse_quantity(quantity), cents))
+            return format_precise_input(line_total(parse_quantity(quantity), price_e5))
         except ValueError:
             return ""
 
@@ -252,10 +270,10 @@ class _ProductRowsMixin:
     def _sync_price(self, quantity, price, value):
         """Niepoprawne pole zostawia cenę bez zmian; błąd zgłosi dopiero zapis."""
         try:
-            cents = parse_money(value.text())
-            if cents >= 0:
-                milli = parse_quantity(quantity.text())
-                self._set_quietly(price, format_money_input(unit_price(cents, milli)))
+            total_e5 = parse_precise(value.text())
+            if total_e5 >= 0:
+                quantity_e5 = parse_quantity(quantity.text())
+                self._set_quietly(price, format_precise_input(unit_price(total_e5, quantity_e5)))
         except ValueError:
             pass
 
@@ -302,7 +320,7 @@ class _ProductRowsMixin:
                 self.table.cellWidget(index, self.PRICE).text(),
             )
         try:
-            return max(parse_money(text), 0)
+            return to_cents(max(parse_precise(text), 0))
         except ValueError:
             return 0
 

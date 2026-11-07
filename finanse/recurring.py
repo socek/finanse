@@ -3,7 +3,7 @@
 import re
 
 from .errors import ValidationError
-from .money import format_money_input, format_quantity
+from .money import format_precise_input, format_quantity_input
 from .transactions import (
     MAX_TEXT_LENGTH,
     insert_products,
@@ -42,9 +42,9 @@ def get_recurring(db, recurring_id):
         {
             "name": product["name"],
             "category": product["category_id"],
-            "quantity": format_quantity(product["quantity_milli"]),
-            "price": format_money_input(product["unit_price_cents"]),
-            "total": format_money_input(product["total_cents"]),
+            "quantity": format_quantity_input(product["quantity_e5"]),
+            "price": format_precise_input(product["unit_price_e5"]),
+            "total": format_precise_input(product["total_e5"]),
         }
         for product in db.execute(
             "SELECT * FROM recurring_products WHERE recurring_id = ? ORDER BY position",
@@ -86,8 +86,8 @@ def _insert_recurring_products(db, recurring_id, products):
         """
         INSERT INTO recurring_products (
             recurring_id, position, name, category_id,
-            quantity_milli, unit_price_cents, total_cents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            quantity_e5, unit_price_e5, total_e5, total_cents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -95,8 +95,9 @@ def _insert_recurring_products(db, recurring_id, products):
                 position,
                 product["name"],
                 product["category_id"],
-                product["quantity_milli"],
-                product["unit_price_cents"],
+                product["quantity_e5"],
+                product["unit_price_e5"],
+                product["total_e5"],
                 product["total_cents"],
             )
             for position, product in enumerate(products)
