@@ -2491,3 +2491,55 @@ def test_tab_title_counts_due_payments(db, errors, monkeypatch):
     window.tabs.setCurrentIndex(index)
     window.recurring.table.cellWidget(0, PAY).click()
     assert window.tabs.tabText(index) == "Cykliczne"
+
+
+def test_reports_tab_switches_period_kinds(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-03-05", price="10")
+    add(db, wallet, on="2026-10-05", price="20")
+    add(db, wallet, on="2025-12-31", price="40")
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+    assert tab.period_inputs.currentWidget() is tab.month_edit
+
+    tab.period_combo.setCurrentIndex(tab.period_combo.findData("year"))
+    assert tab.report["period"] == "year"
+    assert tab.month_title.text() == "rok 2026"
+    assert tab.year_edit.value() == 2026
+    assert tab.period_inputs.currentWidget() is tab.year_edit
+    assert "30,00" in tab.expense_label.text()
+    assert tab.trend_title.text() == "Miesiące roku 2026"
+    tab.previous_button.click()
+    assert tab.month_title.text() == "rok 2025" and "40,00" in tab.expense_label.text()
+    tab.year_edit.setValue(2026)
+    assert tab.report["year"] == "2026"
+
+    tab.chart.monthClicked.emit("2026-03")
+    assert (tab.report["period"], tab.report["month_key"]) == ("month", "2026-03")
+    assert tab.period_combo.currentData() == "month"
+
+    tab.period_combo.setCurrentIndex(tab.period_combo.findData("range"))
+    tab.range_start.setDate(QDate(2025, 12, 1))
+    tab.range_end.setDate(QDate(2026, 3, 31))
+    assert (tab.report["start"], tab.report["end"]) == ("2025-12-01", "2026-03-31")
+    assert "50,00" in tab.expense_label.text()
+    assert tab.trend_title.text() == "Według miesięcy"
+    assert "przeliczone na okres (4 mies.)" in tab.budgets_hint.text()
+    tab.next_button.click()
+    assert tab.report["start"] == "2026-04-01"
+    assert common.iso_date(tab.range_start) == "2026-04-01"
+
+    tab.period_combo.setCurrentIndex(tab.period_combo.findData("month"))
+    assert tab.report["month_key"] == "2026-03"
+    assert "przeliczone" not in tab.budgets_hint.text()
+
+
+def test_year_bar_opens_year_report(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2024-05-05", price="10")
+    tab = ReportsTab(db)
+    tab.show_period({"period": "range", "start": "2023-01-01", "end": "2026-12-31"})
+    assert tab.trend_table.horizontalHeaderItem(0).text() == "Rok"
+    tab.chart.monthClicked.emit("2024")
+    assert (tab.report["period"], tab.month_title.text()) == ("year", "rok 2024")
+    assert tab.trend_table.horizontalHeaderItem(0).text() == "Miesiąc"

@@ -1,5 +1,8 @@
+from datetime import date
+
 import pytest
 
+from finanse.budgets import set_budgets
 from finanse.categories import (
     create_category,
     delete_category,
@@ -10,7 +13,7 @@ from finanse.categories import (
 from finanse.errors import ValidationError
 from finanse.products import group_products_by_day, load_products
 from finanse.recurring import create_recurring, delete_recurring
-from finanse.reports import axis_scale, build_report
+from finanse.reports import axis_scale, budget_months, build_report
 from finanse.transactions import (
     create_transaction,
     delete_transaction,
@@ -611,3 +614,77 @@ def test_report_without_wallets(db):
 )
 def test_axis_scale(cents, step, maximum):
     assert axis_scale(cents) == (step, maximum)
+
+
+def test_year_report_and_month_bars(db):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, ("Styczeń", "1", "10"), on="2026-01-01")
+    add(db, wallet, ("Grudzień", "1", "20"), on="2026-12-31")
+    add(db, wallet, ("Poza", "1", "99"), on="2025-12-31")
+    add(db, wallet, ("Pensja", "1", "100"), kind="income", on="2026-06-15")
+    report = build_report(db, period="year", year="2026")
+    assert (report["period"], report["title"]) == ("year", "rok 2026")
+    assert (report["start"], report["end"]) == ("2026-01-01", "2026-12-31")
+    assert (report["expense_total"], report["income_total"]) == (3000, 10000)
+    assert report["previous"] == {"period": "year", "year": "2025"}
+    assert report["next"] == {"period": "year", "year": "2027"}
+    trend = report["trend"]
+    assert trend["title"] == "Miesiące roku 2026"
+    assert [m["key"] for m in trend["months"]][::11] == ["2026-01", "2026-12"]
+    assert trend["months"][0]["expense"] == 1000 and trend["months"][11]["expense"] == 2000
+    assert not any(m["selected"] for m in trend["months"])
+    assert build_report(db, period="year", year="abc")["year"] == str(date.today().year)
+
+
+def test_range_report_includes_both_ends(db):
+    wallet = create_wallet(db, "A")
+    for day, price in (("2026-03-09", "1"), ("2026-03-10", "2"), ("2026-05-20", "4"),
+                       ("2026-05-21", "8")):  # fmt: skip
+        add(db, wallet, ("X", "1", price), on=day)
+    report = build_report(db, period="range", start="2026-03-10", end="2026-05-20")
+    assert report["expense_total"] == 600
+    assert report["title"] == "10 marca 2026 – 20 maja 2026"
+    assert [m["key"] for m in report["trend"]["months"]] == ["2026-03", "2026-04", "2026-05"]
+    assert report["trend"]["title"] == "Według miesięcy"
+    # Sąsiedni okres ma tę samą długość: 72 dni.
+    assert report["previous"] == {"period": "range", "start": "2025-12-28", "end": "2026-03-09"}
+    assert report["next"] == {"period": "range", "start": "2026-05-21", "end": "2026-07-31"}
+
+    swapped = build_report(db, period="range", start="2026-05-20", end="2026-03-10")
+    assert (swapped["start"], swapped["end"]) == ("2026-03-10", "2026-05-20")
+
+
+def test_long_range_shows_years(db):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, ("X", "1", "5"), on="2024-02-01")
+    add(db, wallet, ("Y", "1", "7"), on="2026-02-01")
+    report = build_report(db, period="range", start="2024-01-15", end="2026-06-30")
+    trend = report["trend"]
+    assert trend["title"] == "Według lat"
+    assert [(m["key"], m["expense"]) for m in trend["months"]] == [
+        ("2024", 500), ("2025", 0), ("2026", 700),
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "months"),
+    [
+        ("2026-02-01", "2026-03-01", 1),
+        ("2026-01-01", "2027-01-01", 12),
+        ("2026-02-15", "2026-03-01", 0.5),
+        ("2026-01-17", "2026-03-01", 1 + 15 / 31),
+    ],
+)
+def test_budget_months(start, end, months):
+    assert budget_months(date.fromisoformat(start), date.fromisoformat(end)) == pytest.approx(months)
+
+
+def test_budget_limit_follows_period(db):
+    wallet = create_wallet(db, "A")
+    food = category_id(db, "Jedzenie")
+    set_budgets(db, food, {"PLN": "100"})
+    add(db, wallet, ("X", "1", "150", food), on="2026-03-05")
+    year = build_report(db, period="year", year="2026")["budgets"][0]
+    assert (year["limit"], year["monthly"], year["spent"], year["over"]) == (120000, 10000, 15000, False)
+    half = build_report(db, period="range", start="2026-02-15", end="2026-02-28")["budgets"][0]
+    assert half["limit"] == 5000

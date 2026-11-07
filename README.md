@@ -15,8 +15,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - przelewy między portfelami, także w różnych walutach
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
-- raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
-  portfele, podział na kategorie i wykres z 12 miesięcy
+- raporty za miesiąc, rok lub dowolny zakres dat z wybranych portfeli jednej waluty:
+  bilans, rozbicie na portfele, podział na kategorie i wykres według miesięcy lub lat
 - miesięczne budżety kategorii, osobno dla każdej waluty, z paskiem wykorzystania
   w raporcie
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
@@ -120,7 +120,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 
 W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto
 to wartość pomniejszona o `vat_cents`. Stawki to 23%, 8%, 5%, 0% i zwolnienie. Zestawienie
-VAT sumuje stawki z transakcji wybranego miesiąca, według ich daty, i nie zastępuje
+VAT sumuje stawki z transakcji wybranego okresu raportu, według ich daty, i nie zastępuje
 rozliczenia z księgowością.
 
 Transakcja cykliczna może mieć termin następnej płatności i okres: co ileś dni, tygodni,
@@ -130,9 +130,15 @@ wraca do pierwotnego dnia, np. 31 stycznia, 28 lutego, 31 marca. Zakładka pokaz
 w nazwie liczbę płatności po terminie lub na dzisiaj, a na liście wyróżnia zaległe
 oraz te z terminem w ciągu 7 dni.
 
+Raport obejmuje miesiąc, rok albo zakres dat z oboma końcami. Wykres pokazuje 12 miesięcy
+do wybranego miesiąca, miesiące wybranego roku, a dla zakresu jego miesiące albo, przy
+zakresie dłuższym niż 24 miesiące, lata. Kliknięcie słupka otwiera raport tego miesiąca
+lub roku. Przyciski poprzedni i następny przesuwają okres o jego długość.
+
 Budżet to miesięczny limit wydatków w kategorii, ustawiany w zakładce **Kategorie**
 osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z wydatkami
-z portfeli wybranych w raporcie, bez przychodów i przelewów. Od 80% limitu pasek jest
+z portfeli wybranych w raporcie, bez przychodów i przelewów. W raporcie za rok lub zakres dat limit
+jest mnożony przez liczbę miesięcy, a niepełny miesiąc liczy się według dni. Od 80% limitu pasek jest
 bursztynowy, a po przekroczeniu czerwony. Usunięcie kategorii usuwa też jej budżet.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe

@@ -2,6 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Raporty za rok i za dowolny zakres dat, obok miesięcznych. Wykres pokazuje miesiące okresu,
+  a przy długim zakresie lata, a budżety są przeliczane na długość okresu.
 - Pasek tytułowy w każdym oknie aplikacji, z tytułem, przyciskiem zamknięcia i przesuwaniem
   okna. Domyślnie włączony na pulpitach bez dekoracji okien, np. Hyprland, i przełączany
   w Ustawieniach.

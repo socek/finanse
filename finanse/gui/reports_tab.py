@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolTip,
@@ -233,7 +235,15 @@ class ReportsTab(QWidget):
         self.currency = ""
         self.excluded = set()  # dzięki temu nowy portfel jest od razu w raporcie
         self.listed_wallets = None
-        self.month = QDate.currentDate().toString("yyyy-MM")
+        today = QDate.currentDate()
+        # Wybrany okres; pola pozostałych rodzajów pamiętają ostatnie wartości.
+        self.period = {
+            "period": "month",
+            "month": today.toString("yyyy-MM"),
+            "year": str(today.year()),
+            "start": QDate(today.year(), today.month(), 1).toString(Qt.DateFormat.ISODate),
+            "end": today.toString(Qt.DateFormat.ISODate),
+        }
         self.report = None
 
         self.currency_label = QLabel("Waluta")
@@ -258,18 +268,42 @@ class ReportsTab(QWidget):
         side_layout.addWidget(self.select_all_button)
         side_layout.addWidget(self.select_none_button)
 
+        self.period_combo = QComboBox()
+        for key, name in (("month", "Miesiąc"), ("year", "Rok"), ("range", "Zakres dat")):
+            self.period_combo.addItem(name, key)
+        self.period_combo.currentIndexChanged.connect(self._period_kind_changed)
         self.previous_button = QPushButton("← Poprzedni")
         shortcuts.show_on(self.previous_button, "previous_month")
-        self.previous_button.clicked.connect(lambda: self.show_month(self.report["previous_month"]))
+        self.previous_button.clicked.connect(lambda: self.show_period(self.report["previous"]))
         self.month_edit = QDateEdit()
         self.month_edit.setDisplayFormat("yyyy-MM")
         self.month_edit.dateChanged.connect(self._month_edited)
+        self.year_edit = QSpinBox()
+        self.year_edit.setRange(1900, 9999)
+        self.year_edit.valueChanged.connect(lambda value: self.show_period({"year": str(value)}))
+        self.range_start = common.date_edit()
+        self.range_end = common.date_edit()
+        for edit in (self.range_start, self.range_end):
+            edit.dateChanged.connect(self._range_edited)
+        range_widget = QWidget()
+        range_layout = QHBoxLayout(range_widget)
+        range_layout.setContentsMargins(0, 0, 0, 0)
+        range_layout.addWidget(QLabel("Od"))
+        range_layout.addWidget(self.range_start)
+        range_layout.addWidget(QLabel("Do"))
+        range_layout.addWidget(self.range_end)
+        self.period_inputs = QStackedWidget()
+        self.period_inputs.addWidget(self.month_edit)
+        self.period_inputs.addWidget(self.year_edit)
+        self.period_inputs.addWidget(range_widget)
+        self.period_inputs.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.next_button = QPushButton("Następny →")
         shortcuts.show_on(self.next_button, "next_month")
-        self.next_button.clicked.connect(lambda: self.show_month(self.report["next_month"]))
+        self.next_button.clicked.connect(lambda: self.show_period(self.report["next"]))
         controls = QHBoxLayout()
+        controls.addWidget(self.period_combo)
         controls.addWidget(self.previous_button)
-        controls.addWidget(self.month_edit)
+        controls.addWidget(self.period_inputs)
         controls.addWidget(self.next_button)
         controls.addStretch()
 
@@ -322,18 +356,16 @@ class ReportsTab(QWidget):
 
         self.budgets_grid = QGridLayout()
         self.budgets_empty = QLabel()
-        self.budgets_hint = QLabel(
-            "Budżety obejmują wydatki z portfeli wybranych w raporcie."
-            " Ustawisz je w zakładce Kategorie."
-        )
+        self.budgets_hint = QLabel()
+        self.budgets_hint.setWordWrap(True)
 
         self.expenses_grid = QGridLayout()
-        self.expenses_empty = QLabel("Brak wydatków w tym miesiącu.")
+        self.expenses_empty = QLabel("Brak wydatków w tym okresie.")
         self.incomes_title = _section_title("Przychody według kategorii")
         self.incomes_grid = QGridLayout()
 
         self.chart = TrendChart()
-        self.chart.monthClicked.connect(self.show_month)
+        self.chart.monthClicked.connect(self._bar_clicked)
         self.trend_empty = QLabel("Brak transakcji w tym okresie.")
         legend = QHBoxLayout()
         self.income_swatch = _swatch(common.income_series())
@@ -386,7 +418,8 @@ class ReportsTab(QWidget):
         body_layout.addWidget(self.incomes_title)
         body_layout.addLayout(self.incomes_grid)
         body_layout.addSpacing(12)
-        body_layout.addWidget(_section_title("Ostatnie 12 miesięcy"))
+        self.trend_title = _section_title("")
+        body_layout.addWidget(self.trend_title)
         body_layout.addWidget(self.trend_empty)
         body_layout.addLayout(legend)
         body_layout.addWidget(self.chart)
@@ -416,8 +449,9 @@ class ReportsTab(QWidget):
             self.wallet_list,
             self.select_all_button,
             self.select_none_button,
+            self.period_combo,
             self.previous_button,
-            self.month_edit,
+            self.period_inputs,
             self.next_button,
         )
         self.refresh()
@@ -435,11 +469,35 @@ class ReportsTab(QWidget):
         self.select_none_button.click()
 
     def show_month(self, key):
-        self.month = key
+        self.show_period({"period": "month", "month": key})
+
+    def show_period(self, changes):
+        """Zmienia okres raportu; pominięte pola zostają, np. rok przy zmianie miesiąca."""
+        self.period = {**self.period, **changes}
         self.refresh()
+
+    def _period_kind_changed(self):
+        kind = self.period_combo.currentData()
+        if kind != self.period["period"]:
+            self.show_period({"period": kind})
 
     def _month_edited(self, value):
         self.show_month(value.toString("yyyy-MM"))
+
+    def _range_edited(self):
+        self.show_period(
+            {
+                "start": common.iso_date(self.range_start),
+                "end": common.iso_date(self.range_end),
+            }
+        )
+
+    def _bar_clicked(self, key):
+        """Słupek roku otwiera raport roczny, a słupek miesiąca miesięczny."""
+        if len(key) == 4:
+            self.show_period({"period": "year", "year": key})
+        else:
+            self.show_month(key)
 
     def _currency_changed(self):
         self.currency = self.currency_combo.currentData() or ""
@@ -473,7 +531,16 @@ class ReportsTab(QWidget):
             for wallet in list_wallets(self.db)
             if wallet["id"] not in self.excluded
         }
-        self.report = build_report(self.db, self.currency, wallet_ids, self.month)
+        self.report = build_report(
+            self.db,
+            self.currency,
+            wallet_ids,
+            self.period["month"],
+            self.period["period"],
+            self.period["year"],
+            self.period["start"],
+            self.period["end"],
+        )
         has_report = self.report is not None
         self.no_wallets.setVisible(not has_report)
         self.no_selection.setVisible(has_report and not self.report["selected_ids"])
@@ -485,14 +552,12 @@ class ReportsTab(QWidget):
 
         report = self.report
         self.currency = report["currency"]
-        self.month = report["month_key"]
+        self._remember_period(report)
         self._fill_selection(report)
-        self.month_edit.blockSignals(True)
-        self.month_edit.setDate(QDate.fromString(self.month + "-01", "yyyy-MM-dd"))
-        self.month_edit.blockSignals(False)
+        self._fill_period_inputs()
 
         currency = report["currency"]
-        self.month_title.setText(report["month_title"])
+        self.month_title.setText(report["title"])
         self._fill_wallet_totals(report)
         self._fill_vat(report)
         self.income_label.setText(format_money(report["income_total"], currency))
@@ -506,6 +571,10 @@ class ReportsTab(QWidget):
         self._fill_bars(self.incomes_grid, report["incomes"], common.income_series(), currency)
 
         trend = report["trend"]
+        self.trend_title.setText(trend["title"])
+        self.trend_table.horizontalHeaderItem(0).setText(
+            "Rok" if trend["months"] and len(trend["months"][0]["key"]) == 4 else "Miesiąc"
+        )
         has_data = trend["has_data"]
         self.trend_empty.setVisible(not has_data)
         self.chart.setVisible(has_data)
@@ -529,6 +598,33 @@ class ReportsTab(QWidget):
                     )
                 self.trend_table.setItem(row, column, item)
         _fit_height(self.trend_table)
+
+    def _remember_period(self, report):
+        """Okres po poprawkach, np. zamienione końce zakresu albo niepoprawny rok."""
+        kind = report["period"]
+        self.period["period"] = kind
+        if kind == "month":
+            self.period["month"] = report["month_key"]
+        elif kind == "year":
+            self.period["year"] = report["year"]
+        else:
+            self.period["start"], self.period["end"] = report["start"], report["end"]
+
+    def _fill_period_inputs(self):
+        period = self.period
+        widgets = (
+            self.period_combo, self.month_edit, self.year_edit, self.range_start, self.range_end,
+        )  # fmt: skip
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.period_combo.setCurrentIndex(self.period_combo.findData(period["period"]))
+        self.period_inputs.setCurrentIndex(("month", "year", "range").index(period["period"]))
+        self.month_edit.setDate(QDate.fromString(period["month"] + "-01", "yyyy-MM-dd"))
+        self.year_edit.setValue(int(period["year"]))
+        self.range_start.setDate(QDate.fromString(period["start"], Qt.DateFormat.ISODate))
+        self.range_end.setDate(QDate.fromString(period["end"], Qt.DateFormat.ISODate))
+        for widget in widgets:
+            widget.blockSignals(False)
 
     def _fill_selection(self, report):
         self.currency_combo.blockSignals(True)
@@ -636,6 +732,17 @@ class ReportsTab(QWidget):
         _clear_grid(self.budgets_grid)
         self.budgets_empty.setVisible(not budgets)
         self.budgets_empty.setText(f"Nie masz budżetów w {currency}.")
+        hint = (
+            "Budżety obejmują wydatki z portfeli wybranych w raporcie."
+            " Ustawisz je w zakładce Kategorie."
+        )
+        if report["period"] != "month":
+            months = f"{report['budget_months']:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+            hint += (
+                f" Miesięczne limity są przeliczone na okres ({months} mies.),"
+                " a niepełne miesiące liczą się według dni."
+            )
+        self.budgets_hint.setText(hint)
         self.budgets_grid.setColumnMinimumWidth(0, 140)
         self.budgets_grid.setColumnStretch(1, 1)
         self.budgets_grid.setColumnMinimumWidth(2, 190)
