@@ -1,5 +1,6 @@
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from ..settings import load_settings, save_setting
 from ..storage import database_path
-from . import common, shortcuts
+from . import common, shortcuts, title_bar
 from .themes import SYSTEM, apply_theme, theme_choices
 
 ACTION, SHORTCUT, RESET = range(3)
@@ -34,8 +35,16 @@ class SettingsTab(QWidget):
         saved = load_settings(self.database).get("theme", SYSTEM)
         self.theme.setCurrentIndex(max(self.theme.findData(saved), 0))
         self.theme.currentIndexChanged.connect(self._theme_selected)
+        self.title_bar = QCheckBox("Pokazuj pasek tytułowy w oknach aplikacji")
+        self.title_bar.setToolTip(
+            "Dla menedżerów okien, które same nie rysują pasków, np. Hyprland."
+            " Przeciągnięcie paska przesuwa okno."
+        )
+        self.title_bar.setChecked(title_bar.is_enabled())
+        self.title_bar.toggled.connect(self._title_bar_toggled)
         form = QFormLayout()
         form.addRow("Motyw", self.theme)
+        form.addRow("Okna", self.title_bar)
 
         self.editors = {}
         self.table = QTableWidget(len(shortcuts.ACTIONS), 3)
@@ -86,6 +95,10 @@ class SettingsTab(QWidget):
         apply_theme(key)
         self._notify()
         self._save("theme", key, "motywu")
+
+    def _title_bar_toggled(self, checked):
+        title_bar.set_enabled(checked)
+        self._save(title_bar.SETTING, checked, "paska tytułowego")
 
     def _notify(self):
         if self.on_changed:

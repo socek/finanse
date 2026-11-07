@@ -8,6 +8,7 @@ from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .db import backup_on_startup, connect, init_db
+from .gui import title_bar
 from .gui.main_window import MainWindow
 from .gui.themes import apply_theme
 from .settings import load_settings
@@ -58,7 +59,9 @@ def main(argv=None):
         )
         return 1
 
-    apply_theme(load_settings(path).get("theme"))
+    settings = load_settings(path)
+    apply_theme(settings.get("theme"))
+    title_bar.install(app, settings.get(title_bar.SETTING, title_bar.default_enabled()))
     window = MainWindow(db)
     window.show()
     try:

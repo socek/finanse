@@ -2,6 +2,9 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Pasek tytułowy w każdym oknie aplikacji, z tytułem, przyciskiem zamknięcia i przesuwaniem
+  okna. Domyślnie włączony na pulpitach bez dekoracji okien, np. Hyprland, i przełączany
+  w Ustawieniach.
 - Miesięczne budżety kategorii, ustawiane w zakładce Kategorie osobno dla każdej waluty.
   Raport pokazuje, ile z limitu wydano i ile zostało, z wyróżnieniem budżetów bliskich
   wyczerpania i przekroczonych.

@@ -24,6 +24,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
 - skróty klawiszowe do większości działań, zmieniane w zakładce **Ustawienia**
+- własny pasek tytułowy w każdym oknie, dla menedżerów okien bez dekoracji, np. Hyprland
 
 ## Uruchomienie
 
@@ -42,6 +43,14 @@ po przeniesieniu projektu, bo plik zawiera jego ścieżkę:
 ```sh
 sed "s|@PROJECT_DIR@|$PWD|g" finanse.desktop.in > ~/.local/share/applications/finanse.desktop
 ```
+
+## Pasek tytułowy
+
+Menedżery okien takie jak Hyprland czy sway nie rysują pasków tytułowych, więc aplikacja
+może dodać własny do każdego okna: głównego, formularzy, komunikatów i zapytań. Pasek
+pokazuje tytuł okna i przycisk zamknięcia, a przeciągnięcie go przesuwa pływające okno.
+Domyślnie jest włączony, gdy `XDG_CURRENT_DESKTOP` wskazuje taki pulpit. Przełącznik
+w zakładce **Ustawienia** zapisuje wybór w `settings.json`.
 
 ## Wersja i historia zmian
 
