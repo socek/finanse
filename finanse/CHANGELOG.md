@@ -2,6 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Historia ceny produktu w zakładce Produkty: ostatnia, najniższa, najwyższa i średnia cena,
+  zmiana od pierwszego zakupu, wykres ceny w czasie i porównanie sklepów.
 - Raporty za rok i za dowolny zakres dat, obok miesięcznych. Wykres pokazuje miesiące okresu,
   a przy długim zakresie lata, a budżety są przeliczane na długość okresu.
 - Pasek tytułowy w każdym oknie aplikacji, z tytułem, przyciskiem zamknięcia i przesuwaniem

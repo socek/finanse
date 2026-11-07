@@ -12,6 +12,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   dni, z wielu wybranych portfeli naraz, z szukaniem po nazwie i filtrami po dacie,
   kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
+- historia ceny produktu: najniższa, najwyższa i średnia cena, wykres oraz porównanie sklepów
 - przelewy między portfelami, także w różnych walutach
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
@@ -140,6 +141,11 @@ osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z
 z portfeli wybranych w raporcie, bez przychodów i przelewów. W raporcie za rok lub zakres dat limit
 jest mnożony przez liczbę miesięcy, a niepełny miesiąc liczy się według dni. Od 80% limitu pasek jest
 bursztynowy, a po przekroczeniu czerwony. Usunięcie kategorii usuwa też jej budżet.
+
+Historia ceny, otwierana w zakładce **Produkty**, zbiera wydatki na produkt o tej samej
+nazwie, bez względu na wielkość liter i nadmiarowe spacje, osobno dla każdej waluty.
+Sklepem jest opis transakcji. Średnia to kwota zapłacona za jednostkę: suma wartości
+podzielona przez sumę ilości.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

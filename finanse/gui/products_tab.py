@@ -32,6 +32,7 @@ from .day_list import (
     wallet_panel,
 )
 from .dialogs import TransactionDialog
+from .price_history import PriceHistoryDialog
 
 NAME, TRANSACTION, WALLET, CATEGORY, QUANTITY, PRICE, VALUE = range(1, 8)
 VAT_RATE, NET, VAT_AMOUNT = 10, 11, 12  # za kolumnami sum dnia, a na ekranie przed wartością
@@ -77,6 +78,11 @@ class ProductsTab(QWidget):
         self.collapse_all_button = QPushButton("Zwiń wszystko")
         shortcuts.show_on(self.collapse_all_button, "collapse_all")
         self.collapse_all_button.clicked.connect(self.tree.collapseAll)
+        self.price_button = QPushButton("Historia ceny")
+        self.price_button.setToolTip(
+            "Ceny zaznaczonego produktu we wszystkich wydatkach i porównanie sklepów."
+        )
+        self.price_button.clicked.connect(self.show_price_history)
         self.edit_button = QPushButton("Edytuj transakcję")
         shortcuts.show_on(self.edit_button, "edit_selected")
         self.edit_button.clicked.connect(self.edit_transaction)
@@ -84,6 +90,7 @@ class ProductsTab(QWidget):
         actions.addWidget(self.expand_all_button)
         actions.addWidget(self.collapse_all_button)
         actions.addStretch()
+        actions.addWidget(self.price_button)
         actions.addWidget(self.edit_button)
 
         right = QWidget()
@@ -215,8 +222,19 @@ class ProductsTab(QWidget):
         key = item.data(0, KEY_ROLE) if item else None
         return key[2] if key and key[0] == "product" else None
 
+    def selected_product_name(self):
+        item = self.tree.currentItem()
+        return item.text(NAME) if self.selected_transaction() is not None else None
+
     def _update_buttons(self, *_):
-        self.edit_button.setEnabled(self.selected_transaction() is not None)
+        selected = self.selected_transaction() is not None
+        self.edit_button.setEnabled(selected)
+        self.price_button.setEnabled(selected)
+
+    def show_price_history(self):
+        name = self.selected_product_name()
+        if name is not None:
+            PriceHistoryDialog(self.db, name, parent=self).exec()
 
     def _show_menu(self, position):
         item = self.tree.itemAt(position)
@@ -227,6 +245,7 @@ class ProductsTab(QWidget):
             return
         menu = QMenu(self)
         menu.addAction("Edytuj transakcję", self.edit_transaction)
+        menu.addAction("Historia ceny", self.show_price_history)
         menu.exec(self.tree.viewport().mapToGlobal(position))
 
     def edit_transaction(self):
