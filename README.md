@@ -13,6 +13,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - historia ceny produktu: najniższa, najwyższa i średnia cena, wykres oraz porównanie sklepów
+- podpowiedzi nazw produktów z historii, które uzupełniają kategorię, ostatnią cenę i stawkę VAT
 - przelewy między portfelami, także w różnych walutach
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
@@ -155,6 +156,11 @@ i powtarzające się kilka razy w okresie, z uwzględnieniem licznika. Płatnoś
 bez produktów są wymienione, ale nie zmieniają prognozy, bo nie mają kwoty. Zakładka
 **Portfele** pokazuje prognozę zaznaczonych portfeli na koniec miesiąca, a przycisk
 **Prognoza salda** otwiera szczegóły z wyborem dnia.
+
+Pole nazwy produktu podpowiada znane nazwy, od najczęściej używanych, po fragmencie
+nazwy i bez względu na wielkość liter. Wybór nazwy albo wpisanie znanej uzupełnia puste
+pola z ostatniego użycia: kategorię, cenę z ostatniego zakupu w walucie portfela i, w portfelu
+z VAT, stawkę. Wpisanych już wartości podpowiedź nie zmienia.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

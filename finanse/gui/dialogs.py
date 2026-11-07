@@ -1,9 +1,10 @@
 """Formularze: portfel, transakcja i przelew."""
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, QStringListModel, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -44,6 +45,7 @@ from ..recurring import (
     unit_name,
     update_recurring,
 )
+from ..suggestions import last_purchase, product_names
 from ..transactions import (
     EMPTY_ROW,
     VAT_RATES,
@@ -152,6 +154,8 @@ class _ProductRowsMixin:
 
     def _product_section(self, rows, categories):
         self.categories = categories
+        # Jedna lista nazw dla wszystkich wierszy; czytana raz przy otwarciu okna.
+        self.product_names = QStringListModel(product_names(self.db), self)
         self.total = QLabel()
         self.table = QTableWidget(0, 9)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -232,6 +236,11 @@ class _ProductRowsMixin:
         self.table.insertRow(index)
         name = QLineEdit(row["name"])
         name.setMaxLength(200)
+        completer = QCompleter(self.product_names, name)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setMaxVisibleItems(10)
+        name.setCompleter(completer)
         category = CategoryCombo()
         category.addItem("Bez kategorii", None)
         for item in self.categories:
@@ -265,6 +274,12 @@ class _ProductRowsMixin:
         for field in (quantity, price, value, net_price, net_value):
             field.textEdited.connect(lambda _text, edited=field: _remove_minus(edited))
         name.textChanged.connect(self._update_totals)
+
+        def suggest(*_):
+            self._apply_suggestion(name, category, price, value, vat_rate)
+
+        completer.activated.connect(suggest)
+        name.editingFinished.connect(suggest)
         quantity.textChanged.connect(lambda: self._quantity_edited(quantity, price, value))
         price.textChanged.connect(lambda: self._price_edited(quantity, price, value))
         value.textChanged.connect(lambda: self._value_edited(quantity, price, value))
@@ -285,6 +300,28 @@ class _ProductRowsMixin:
         if focus:
             name.setFocus()
             self._update_totals()
+
+    def _apply_suggestion(self, name, category, price, value, vat_rate):
+        """Uzupełnia puste pola wiersza wartościami z ostatniego zakupu tej nazwy.
+
+        Wpisanej już kategorii, ceny ani wartości nigdy nie nadpisuje. Stawkę VAT ustawia
+        tylko w wierszu bez ceny i wartości, bo inaczej zmieniłaby wyliczone netto.
+        """
+        if not name.text().strip():
+            return
+        found = last_purchase(self.db, name.text(), self._currency())
+        if found is None:
+            return
+        if category.selected_category() is None and found["category_id"] is not None:
+            index = category.findData(found["category_id"])
+            if index >= 0:
+                category.setCurrentIndex(index)
+        if price.text().strip() or value.text().strip():
+            return
+        if self._has_vat() and found["has_vat_rate"]:
+            vat_rate.setCurrentIndex(max(vat_rate.findData(found["vat_rate"]), 0))
+        if found["unit_price_e5"] is not None:
+            price.setText(format_precise_input(found["unit_price_e5"]))
 
     @staticmethod
     def _is_fixed_value(stored, computed, price):

@@ -2,6 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Podpowiedzi nazw produktów z historii w oknach transakcji, płatności i transakcji
+  cyklicznych. Wybrana nazwa uzupełnia puste pola: kategorię, ostatnią cenę i stawkę VAT.
 - Prognoza salda na koniec miesiąca w zakładce Portfele i okno prognozy na wybrany dzień,
   z płatnościami cyklicznymi, także zaległymi, i operacjami wpisanymi z późniejszą datą.
 - Historia ceny produktu w zakładce Produkty: ostatnia, najniższa, najwyższa i średnia cena,
