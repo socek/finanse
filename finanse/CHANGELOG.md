@@ -2,7 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
-Na razie bez zmian względem wersji 0.1.
+- Transakcje cykliczne nie mają już własnej kwoty ani kategorii. Wyznaczają je produkty,
+  a bez produktów podaje się je przy płatności.
 
 ## 0.1 (2026-11-07)
 

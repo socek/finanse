@@ -97,3 +97,69 @@ def test_fresh_database_has_default_categories_and_no_backup(tmp_path):
     assert {"Jedzenie", "Wynagrodzenie", "Inne"} <= names and len(names) == 9
     db.close()
     assert not list(tmp_path.glob("*.backup-*"))
+
+
+def _database_with_old_recurring(path):
+    """Baza w wersji 5, gdy transakcje cykliczne miały własną kwotę i kategorię."""
+    connection = sqlite3.connect(path)
+    names = sorted(
+        file.name
+        for file in resources.files("finanse").joinpath("migrations").iterdir()
+        if file.name.endswith(".sql") and int(file.name[:3]) <= 5
+    )
+    for name in names:
+        connection.executescript(_script(name))
+    connection.executescript(
+        """
+        INSERT INTO wallets (id, name) VALUES (1, 'A');
+        INSERT INTO categories (id, name) VALUES (100, 'Psy');
+        INSERT INTO recurring_transactions
+            (id, wallet_id, kind, description, amount_cents, category_id, remaining)
+        VALUES
+            (1, 1, 'expense', 'Z kwotą', 5000, 100, 3),
+            (2, 1, 'income', 'Bez kwoty', NULL, 100, NULL),
+            (3, 1, 'expense', 'Z produktem', 999, 100, NULL);
+        INSERT INTO recurring_products
+            (recurring_id, position, name, quantity_milli, unit_price_cents, total_cents)
+        VALUES (3, 0, 'Woda', 1000, 700, 700);
+        PRAGMA user_version = 5;
+        """
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_recurring_amount_becomes_a_product(tmp_path):
+    path = str(tmp_path / "old.db")
+    _database_with_old_recurring(path)
+    init_db(path)
+
+    db = connect(path)
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(recurring_transactions)")}
+    assert "amount_cents" not in columns and "category_id" not in columns
+    rows = db.execute(
+        "SELECT recurring_id, name, category_id, quantity_milli, unit_price_cents, total_cents"
+        " FROM recurring_products ORDER BY recurring_id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        (1, "Z kwotą", 100, 1000, 5000, 5000),
+        (3, "Woda", None, 1000, 700, 700),  # produkty mają pierwszeństwo przed starą kwotą
+    ]
+    remaining = db.execute(
+        "SELECT id, remaining FROM recurring_transactions ORDER BY id"
+    ).fetchall()
+    assert [tuple(row) for row in remaining] == [(1, 3), (2, None), (3, None)]
+    assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # Klucze obce i dziennik działają na przebudowanej tabeli.
+    before = db.execute("SELECT COUNT(*) FROM change_log").fetchone()[0]
+    with db:
+        db.execute("UPDATE recurring_transactions SET remaining = 2 WHERE id = 1")
+        db.execute("DELETE FROM wallets WHERE id = 1")
+    assert db.execute("SELECT COUNT(*) FROM recurring_products").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM change_log").fetchone()[0] > before
+    db.close()
+
+    backup = sqlite3.connect(f"{path}.backup-v5")
+    assert backup.execute("SELECT amount_cents FROM recurring_transactions WHERE id = 1").fetchone() == (5000,)
+    backup.close()

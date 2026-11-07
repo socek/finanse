@@ -3,6 +3,7 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog
+from helpers import priced
 from test_csv_import import BANK_CSV
 
 from finanse import __version__
@@ -420,7 +421,7 @@ def test_suggestion_only_in_new_transaction(db, errors):
     assert any("Podaj opis" in error for error in errors)
     assert get_transaction(db, transaction)["description"] == "Zakupy"
 
-    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"))
     payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
     assert payment.suggested_description() == ""
 
@@ -563,7 +564,6 @@ def test_value_works_in_recurring_dialog(db, errors):
     quantity.setText("3")
     value.setText("10")
     assert price.text() == "3,33"
-    assert not dialog.amount.isEnabled()
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
     payment = PaymentDialog(db, get_wallet(db, 1), dialog.recurring_id)
@@ -648,7 +648,7 @@ def test_enter_in_edit_payment_and_recurring_dialogs(db, errors):
     _press(edit.description, modifier=Qt.KeyboardModifier.ShiftModifier)
     assert edit.result() == QDialog.DialogCode.Accepted
 
-    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="1")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", remaining="1", rows=priced("Czynsz", "10"))
     payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
     payment.show()
     _press(payment.description, modifier=Qt.KeyboardModifier.ShiftModifier)
@@ -1382,10 +1382,13 @@ def test_products_list_marks_only_products_without_category(db, errors):
 def test_recurring_list_marks_no_category(db, errors):
     wallet, dom = _categorized_wallet(db)
     create_recurring(db, wallet, "expense", "Bez")
-    create_recurring(db, wallet, "expense", "Z", "1", dom)
+    create_recurring(db, wallet, "expense", "Z", rows=priced("Z", "1", dom))
+    create_recurring(db, wallet, "expense", "Y", rows=priced("Y", "1"))
     table = RecurringTab(db).table
-    assert _is_warning(table.item(0, 2))
-    assert not _is_warning(table.item(1, 2))
+    # Bez produktów kategorii jeszcze nie ma, więc nie ma też czego wyróżniać.
+    assert table.item(0, 2).text() == "–" and not _is_warning(table.item(0, 2))
+    assert table.item(1, 2).text() == "Bez kategorii" and _is_warning(table.item(1, 2))
+    assert table.item(2, 2).text() == "Dom" and not _is_warning(table.item(2, 2))
 
 
 def test_report_marks_no_category(db, errors):
@@ -1525,7 +1528,7 @@ def test_edit_and_payment_neither_use_nor_change_remembered_date(db, errors):
     assert edit.occurred_on.date() == QDate(2026, 11, 5)
     edit.accept()
 
-    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"))
     payment = PaymentDialog(db, get_wallet(db, wallet), recurring)
     assert payment.occurred_on.date() == QDate.currentDate()
     payment.occurred_on.setDate(QDate(2020, 1, 1))
@@ -1538,7 +1541,7 @@ def test_edit_and_payment_neither_use_nor_change_remembered_date(db, errors):
 def test_today_button_sets_current_date_in_every_dialog(db, errors):
     wallet = create_wallet(db, "A")
     transaction = add(db, wallet, on="2026-03-14")
-    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"))
     for dialog in (
         TransactionDialog(db, get_wallet(db, wallet)),
         TransactionDialog(db, get_wallet(db, wallet), transaction),
@@ -1740,35 +1743,34 @@ def _accept_on_exec(monkeypatch, dialog_class, before=None):
 def test_recurring_dialog_without_and_with_products(db, errors):
     wallet = create_wallet(db, "A")
     dialog = RecurringDialog(db)
+    assert not hasattr(dialog, "amount") and not hasattr(dialog, "category")
     dialog.accept()
     assert any("Podaj opis" in error for error in errors)
     assert dialog.result() != QDialog.DialogCode.Accepted
 
     dialog.description.setText("Czynsz")
-    dialog.amount.setText("500")
     dialog.remaining.setText("3")
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
     saved = get_recurring(db, dialog.recurring_id)
-    assert (saved["wallet_id"], saved["amount_cents"], saved["remaining"]) == (wallet, 50000, 3)
+    assert (saved["wallet_id"], saved["remaining"]) == (wallet, 3)
     assert saved["rows"] == []
 
     dialog = RecurringDialog(db, dialog.recurring_id)
-    assert dialog.amount.isEnabled() and dialog.remaining.text() == "3"
+    assert dialog.remaining.text() == "3"
     dialog.table.cellWidget(0, dialog.NAME).setText("Woda")
     dialog.table.cellWidget(0, dialog.PRICE).setText("70")
-    assert not dialog.amount.isEnabled() and not dialog.category.isEnabled()
     dialog.accept()
     saved = get_recurring(db, dialog.recurring_id)
-    assert saved["amount_cents"] is None
     assert [row["name"] for row in saved["rows"]] == ["Woda"]
+    assert "amount_cents" not in saved and "category_id" not in saved
 
 
 def test_pay_button_moves_recurring_to_transactions_and_counts_down(
     db, errors, monkeypatch
 ):
     wallet = create_wallet(db, "A", "PLN", "100")
-    create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="2")
+    create_recurring(db, wallet, "expense", "Czynsz", remaining="2", rows=priced("Czynsz", "10"))
     _accept_on_exec(monkeypatch, PaymentDialog)
     tab = RecurringTab(db)
     assert tab.table.item(0, REMAINING).text() == "2"
@@ -1787,7 +1789,7 @@ def test_pay_button_moves_recurring_to_transactions_and_counts_down(
 
 def test_cancelled_payment_changes_nothing(db, errors, monkeypatch):
     wallet = create_wallet(db, "A")
-    create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="2")
+    create_recurring(db, wallet, "expense", "Czynsz", remaining="2", rows=priced("Czynsz", "10"))
     monkeypatch.setattr(PaymentDialog, "exec", lambda _dialog: 0)
     tab = RecurringTab(db)
     tab.table.cellWidget(0, PAY).click()

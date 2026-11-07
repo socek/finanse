@@ -4,6 +4,8 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog, QPushButton
 
+from helpers import priced
+
 from finanse.db import connect, init_db
 from finanse.gui import common, shortcuts
 from finanse.gui.dialogs import TransactionDialog
@@ -143,7 +145,7 @@ def test_delete_key_in_search_field_only_edits_text(db, window):
 
 def test_recurring_pay_edit_delete_keys(db, window, monkeypatch):
     wallet = create_wallet(db, "A")
-    recurring = create_recurring(db, wallet, "expense", "Czynsz", "10", remaining="2")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", remaining="2", rows=priced("Czynsz", "10"))
     window.tabs.setCurrentWidget(window.recurring)
     table = window.recurring.table
     press(window, Qt.Key.Key_P, CTRL)  # nic nie jest zaznaczone

@@ -111,7 +111,7 @@ class RecurringTab(QWidget):
         categories = (
             item["product_categories"] or "Bez kategorii"
             if item["product_count"]
-            else item["category_name"] or "Bez kategorii"
+            else "–"
         )
         cells = {
             DESCRIPTION: item["description"],

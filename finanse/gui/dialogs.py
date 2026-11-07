@@ -459,8 +459,6 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
                 "wallet_id": None,
                 "kind": "expense",
                 "description": "",
-                "amount_cents": None,
-                "category_id": None,
                 "remaining": None,
                 "rows": [],
             }
@@ -477,18 +475,6 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         self.description = QLineEdit(data["description"])
         self.description.setMaxLength(200)
         self.description.setPlaceholderText("np. Czynsz")
-        self.amount = QLineEdit(
-            format_money_input(data["amount_cents"])
-            if data["amount_cents"] is not None
-            else ""
-        )
-        self.amount.setPlaceholderText("puste: ustalana przy płatności")
-        self.category = QComboBox()
-        self.category.addItem("Bez kategorii", None)
-        for item in categories:
-            self.category.addItem(item["name"], item["id"])
-        self.category.setCurrentIndex(max(self.category.findData(data["category_id"]), 0))
-        common.style_category_combo(self.category)
         self.remaining = QLineEdit(
             "" if data["remaining"] is None else str(data["remaining"])
         )
@@ -498,13 +484,11 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         top.addRow("Portfel", self.wallet)
         top.addRow("Rodzaj", self.kind)
         top.addRow("Opis", self.description)
-        top.addRow("Kwota", self.amount)
-        top.addRow("Kategoria", self.category)
         top.addRow("Licznik płatności", self.remaining)
 
         bottom = self._product_section(data["rows"], categories)
         hint = QLabel(
-            "Produkty są opcjonalne. Jeśli je dodasz, to one wyznaczą kwotę i kategorie."
+            "Produkty są opcjonalne. Bez nich kwotę i kategorię podasz przy płatności."
         )
 
         layout = QVBoxLayout(self)
@@ -520,25 +504,11 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
     def _currency(self):
         return self.currencies.get(self.wallet.currentData(), "")
 
-    def _has_products(self):
-        return any(
-            row["name"].strip() or row["price"].strip() or row["total"].strip()
-            for row in self.rows()
-        )
-
-    def _update_totals(self):
-        super()._update_totals()
-        has_products = self._has_products()
-        self.amount.setEnabled(not has_products)
-        self.category.setEnabled(not has_products)
-
     def save(self):
         values = (
             self.wallet.currentData(),
             self.kind.currentData(),
             self.description.text(),
-            self.amount.text(),
-            self.category.currentData(),
             self.remaining.text(),
             self.rows(),
         )

@@ -138,7 +138,8 @@ def _describe(row, names):
     details = [
         f"{field[1]}: {_value(field, current, names)}"
         for field in FIELDS[table]
-        if field[0] != TITLE_FIELDS[table]
+        # Starsze wpisy dziennika mają kolumny, których już nie ma, i na odwrót.
+        if field[0] != TITLE_FIELDS[table] and field[0] in current
     ]
     return f"{title} ({', '.join(details)})"
 

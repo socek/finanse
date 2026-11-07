@@ -4,6 +4,8 @@ import sqlite3
 
 import pytest
 
+from helpers import priced
+
 from finanse.categories import create_category, delete_category, rename_category
 from finanse.db import connect, init_db
 from finanse.history import history_text
@@ -90,7 +92,7 @@ def test_one_action_is_one_operation(db):
 
 def test_payment_groups_transaction_and_counter(db):
     wallet = create_wallet(db, "A")
-    recurring = create_recurring(db, wallet, "expense", "Rata", "10", remaining="2")
+    recurring = create_recurring(db, wallet, "expense", "Rata", remaining="2", rows=priced("Rata", "10"))
     draft = payment_draft(db, recurring)
     pay_recurring(db, recurring, "expense", "2026-11-05", "Rata", draft["rows"])
     rows = log(db)[-3:]
@@ -204,6 +206,27 @@ def test_history_uses_names_of_deleted_wallets(db):
     transaction = add(db, target)
     delete_transaction(db, transaction)
     assert "Usunięto transakcję „Zakupy” (portfel: Nowy" in history_text(db)
+
+
+def test_history_shows_old_entries_and_skips_missing_columns(db):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Nowa", remaining="2")
+    old_values = json.dumps(
+        {"id": 77, "wallet_id": wallet, "kind": "expense", "description": "Stara",
+         "amount_cents": 5000, "category_id": None, "remaining": None, "last_paid_on": None}
+    )  # fmt: skip
+    with db:
+        db.execute(
+            "INSERT INTO change_log (table_name, row_id, action, new_values)"
+            " VALUES ('recurring_transactions', 77, 'insert', ?)",
+            (old_values,),
+        )
+    text = history_text(db).replace("\xa0", " ")
+    old_line = next(line for line in text.splitlines() if "„Stara”" in line)
+    assert "kwota: 50,00" in old_line and "kategoria: bez kategorii" in old_line
+    new_line = next(line for line in text.splitlines() if "„Nowa”" in line)
+    assert "kwota" not in new_line and "kategoria" not in new_line
+    assert "licznik: 2" in new_line
 
 
 def test_history_is_limited_and_says_so(db):
