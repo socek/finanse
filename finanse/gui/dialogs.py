@@ -381,6 +381,7 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
         self.resize(760, 480)
         if self.wallet_combo is not None:
             self.wallet_combo.currentIndexChanged.connect(self._update_totals)
+            self.table.cellWidget(0, self.NAME).setFocus()
         self._update_totals()
 
     def set_today(self):

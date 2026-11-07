@@ -1889,6 +1889,32 @@ def test_row_background_is_really_painted_and_flash_covers_it(db, errors):
     tab.close()
 
 
+def test_new_transaction_starts_in_first_product_name(db, errors):
+    wallet = create_wallet(db, "A")
+    dialog = TransactionDialog(db, get_wallet(db, wallet))
+    dialog.show()
+    assert QTest.qWaitForWindowActive(dialog)
+    name = dialog.table.cellWidget(0, dialog.NAME)
+    assert QApplication.focusWidget() is name
+    QTest.keyClicks(QApplication.focusWidget(), "Kawa")
+    assert name.text() == "Kawa"
+    dialog.close()
+
+
+def test_edit_and_payment_do_not_start_in_product_name(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet)
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1"))
+    for dialog in (
+        TransactionDialog(db, get_wallet(db, wallet), transaction),
+        PaymentDialog(db, get_wallet(db, wallet), recurring),
+    ):
+        dialog.show()
+        assert QTest.qWaitForWindowActive(dialog)
+        assert QApplication.focusWidget() is not dialog.table.cellWidget(0, dialog.NAME)
+        dialog.close()
+
+
 def _accept_on_exec(monkeypatch, dialog_class, before=None):
     def fake_exec(dialog):
         if before:
