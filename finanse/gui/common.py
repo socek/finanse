@@ -142,6 +142,7 @@ def style_category_combo(combo):
         default = QApplication.palette()
         for role, color in (
             (QPalette.ColorRole.Button, warning_background()),
+            (QPalette.ColorRole.Base, warning_background()),
             (QPalette.ColorRole.ButtonText, warning_text()),
             (QPalette.ColorRole.Text, warning_text()),
         ):

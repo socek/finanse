@@ -1,6 +1,6 @@
 import pytest
 from PySide6.QtCore import QDate, QEvent, Qt
-from PySide6.QtGui import QHelpEvent, QPalette
+from PySide6.QtGui import QFocusEvent, QHelpEvent, QKeyEvent, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QToolTip
 from helpers import priced
@@ -1913,6 +1913,246 @@ def test_edit_and_payment_do_not_start_in_product_name(db, errors):
         assert QTest.qWaitForWindowActive(dialog)
         assert QApplication.focusWidget() is not dialog.table.cellWidget(0, dialog.NAME)
         dialog.close()
+
+
+def _category_dialog(db):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    assert QTest.qWaitForWindowActive(dialog)
+    dialog.table.cellWidget(0, dialog.NAME).setText("Kawa")
+    dialog.table.cellWidget(0, dialog.PRICE).setText("3")
+    combo = dialog.table.cellWidget(0, dialog.CATEGORY)
+    combo.setFocus()
+    QApplication.processEvents()
+    return dialog, combo
+
+
+def _saved_category(db, dialog):
+    category_id = get_transaction(db, dialog.transaction_id)["rows"][0]["category"]
+    row = db.execute("SELECT name FROM categories WHERE id = ?", (category_id,)).fetchone()
+    return row[0] if row else None
+
+
+def test_typing_shows_fuzzy_matches_and_keeps_typed_text(db, errors):
+    dialog, combo = _category_dialog(db)
+    assert combo.isEditable()
+    line = combo.lineEdit()
+    QTest.keyClick(line, Qt.Key.Key_J)
+    assert line.text() == "j"  # wynik nie podmienia tekstu w trakcie pisania
+    QTest.keyClick(line, Qt.Key.Key_D)
+    QTest.keyClick(line, Qt.Key.Key_Z)
+    assert line.text() == "jdz"
+    assert line.cursorPosition() == 3
+    assert combo.results.isVisible()
+    assert combo.match_names()[0] == "Jedzenie"
+    assert combo.results.currentItem().text() == "Jedzenie"
+    assert QApplication.focusWidget() is combo  # pole tekstowe przekazuje fokus listy
+    dialog.close()
+
+
+def _focused_dialog(db):
+    dialog = _new_transaction_dialog(db)
+    dialog.show()
+    assert QTest.qWaitForWindowActive(dialog)
+    return dialog, dialog.table.cellWidget(0, dialog.CATEGORY)
+
+
+def test_entering_field_with_tab_selects_whole_text_and_typing_replaces_it(db, errors):
+    dialog, combo = _focused_dialog(db)
+    name = dialog.table.cellWidget(0, dialog.NAME)
+    assert QApplication.focusWidget() is name
+    QTest.keyClick(name, Qt.Key.Key_Tab)
+    QApplication.processEvents()
+    assert QApplication.focusWidget() is combo
+    line = combo.lineEdit()
+    assert line.selectedText() == "Bez kategorii"
+    QTest.keyClick(line, Qt.Key.Key_D)
+    assert line.text() == "d"
+    dialog.close()
+
+
+def test_entering_field_with_mouse_selects_whole_text(db, errors):
+    dialog, combo = _focused_dialog(db)
+    line = combo.lineEdit()
+    QTest.mouseClick(line, Qt.MouseButton.LeftButton, pos=line.rect().center())
+    QApplication.processEvents()
+    assert QApplication.focusWidget() is combo
+    assert line.selectedText() == "Bez kategorii"
+
+    # Kolejne kliknięcie w tym samym polu ustawia już kursor, żeby można było poprawić tekst.
+    QTest.mouseClick(line, Qt.MouseButton.LeftButton, pos=line.rect().center())
+    QApplication.processEvents()
+    assert line.selectedText() == ""
+    dialog.close()
+
+
+def test_selected_name_of_chosen_category_is_selected_on_return_to_field(db, errors):
+    dialog, combo = _focused_dialog(db)
+    combo.setCurrentIndex(combo.findText("Dom"))
+    name = dialog.table.cellWidget(0, dialog.NAME)
+    name.setFocus()
+    QApplication.processEvents()
+    combo.setFocus()
+    QApplication.processEvents()
+    assert combo.lineEdit().selectedText() == "Dom"
+    dialog.close()
+
+
+def test_returning_to_window_keeps_cursor_in_field(db, errors):
+    dialog, combo = _focused_dialog(db)
+    combo.setFocus()
+    QApplication.processEvents()
+    line = combo.lineEdit()
+    line.setCursorPosition(2)
+    assert line.selectedText() == ""
+    QApplication.sendEvent(combo, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.ActiveWindowFocusReason))
+    QApplication.processEvents()
+    assert line.selectedText() == ""
+    dialog.close()
+
+
+def test_results_stay_inside_window_and_on_top(db, errors):
+    dialog, combo = _category_dialog(db)
+    QTest.keyClicks(combo.lineEdit(), "e")
+    results = combo.results
+    assert results.parent() is dialog
+    assert dialog.rect().contains(results.geometry())
+    assert results.height() >= results.sizeHintForRow(0)
+    dialog.close()
+
+
+def test_enter_picks_best_match_then_second_enter_adds_product(db, errors):
+    dialog, combo = _category_dialog(db)
+    line = combo.lineEdit()
+    QTest.keyClicks(line, "wynag")
+    QTest.keyClick(line, Qt.Key.Key_Return)
+    assert combo.currentText() == "Wynagrodzenie"
+    assert combo.currentData() is not None
+    assert dialog.table.rowCount() == 1
+    assert not combo.results.isVisible()
+
+    QTest.keyClick(line, Qt.Key.Key_Return)
+    assert dialog.table.rowCount() == 2
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    dialog.close()
+
+
+def test_arrows_choose_another_match_and_wrap(db, errors):
+    dialog, combo = _category_dialog(db)
+    line = combo.lineEdit()
+    QTest.keyClicks(line, "r")
+    names = combo.match_names()
+    QTest.keyClick(line, Qt.Key.Key_Down)
+    assert combo.results.currentItem().text() == names[1]
+    assert line.text() == "r"  # strzałki też nie zmieniają tekstu
+    QTest.keyClick(line, Qt.Key.Key_Up)
+    QTest.keyClick(line, Qt.Key.Key_Up)
+    assert combo.results.currentItem().text() == names[-1]
+    QTest.keyClick(line, Qt.Key.Key_Return)
+    assert combo.currentText() == names[-1]
+    dialog.close()
+
+
+def test_down_on_closed_field_lists_all_and_escape_closes_only_list(db, errors):
+    dialog, combo = _category_dialog(db)
+    line = combo.lineEdit()
+    QTest.keyClick(line, Qt.Key.Key_Down)
+    assert combo.results.isVisible() and len(combo.match_names()) == combo.count()
+    QTest.keyClick(line, Qt.Key.Key_Escape)
+    assert not combo.results.isVisible()
+    assert dialog.isVisible()
+    QTest.keyClick(line, Qt.Key.Key_Escape)
+    assert not dialog.isVisible()
+
+
+def test_clicking_a_result_chooses_it(db, errors):
+    dialog, combo = _category_dialog(db)
+    line = combo.lineEdit()
+    QTest.keyClicks(line, "r")
+    item = combo.results.item(1)
+    name = item.text()
+    QTest.mouseClick(
+        combo.results.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=combo.results.visualItemRect(item).center(),
+    )
+    assert combo.currentText() == name
+    assert not combo.results.isVisible()
+    assert QApplication.focusWidget() is combo  # pole tekstowe przekazuje fokus listy
+    dialog.close()
+
+
+def test_shift_enter_with_open_list_saves_highlighted_category(db, errors):
+    dialog, combo = _category_dialog(db)
+    line = combo.lineEdit()
+    QTest.keyClicks(line, "r")
+    second = combo.match_names()[1]
+    QTest.keyClick(line, Qt.Key.Key_Down)
+    QTest.keyClick(line, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert _saved_category(db, dialog) == second
+
+
+def test_saving_with_unconfirmed_text_uses_best_match(db, errors):
+    dialog, combo = _category_dialog(db)
+    QTest.keyClicks(combo.lineEdit(), "zdrowe")  # literówka
+    QTest.keyClick(combo.lineEdit(), Qt.Key.Key_Escape)  # bez wyboru z listy
+    assert combo.lineEdit().text() == "zdrowe"
+    QTest.keyClick(combo.lineEdit(), Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert _saved_category(db, dialog) == "Zdrowie"
+
+
+def test_unknown_text_blocks_saving_instead_of_guessing(db, errors):
+    dialog, combo = _category_dialog(db)
+    QTest.keyClicks(combo.lineEdit(), "qqqqqq")
+    assert not combo.results.isVisible()
+    dialog.accept()
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert any("niepoprawna kategoria" in error for error in errors)
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    dialog.close()
+
+
+def test_leaving_field_shows_match_or_restores_previous(db, errors):
+    dialog, combo = _category_dialog(db)
+    combo.setCurrentIndex(combo.findText("Dom"))
+    combo.setEditText("jedz")
+    combo.resolve()
+    assert (combo.currentText(), combo.currentIndex()) == ("Jedzenie", combo.findText("Jedzenie"))
+
+    combo.setEditText("qqqqqq")
+    combo.resolve()
+    assert combo.currentText() == "Jedzenie"
+
+    combo.setEditText("")
+    combo.resolve()
+    assert combo.currentText() == "Bez kategorii"
+    assert combo.selected_category() is None
+    dialog.close()
+
+
+def test_category_list_is_still_complete_and_keeps_warning(db, errors):
+    wallet = create_wallet(db, "A")
+    dialog = TransactionDialog(db, get_wallet(db, wallet))
+    combo = dialog.table.cellWidget(0, dialog.CATEGORY)
+    assert combo.count() == 10  # bez kategorii i 9 domyślnych
+    assert combo.palette().color(QPalette.ColorRole.Base) == common.warning_background()
+    combo.setCurrentIndex(combo.findText("Dom"))
+    assert combo.palette().color(QPalette.ColorRole.Base) != common.warning_background()
+
+
+def test_fuzzy_category_works_in_edit_and_recurring_dialogs(db, errors):
+    wallet = create_wallet(db, "A")
+    transaction = add(db, wallet)
+    edit = TransactionDialog(db, get_wallet(db, wallet), transaction)
+    combo = edit.table.cellWidget(0, edit.CATEGORY)
+    combo.setEditText("dom")
+    edit.accept()
+    assert get_transaction(db, transaction)["rows"][0]["category"] is not None
+
+    template = RecurringDialog(db)
+    assert template.table.cellWidget(0, template.CATEGORY).isEditable()
 
 
 def _accept_on_exec(monkeypatch, dialog_class, before=None):

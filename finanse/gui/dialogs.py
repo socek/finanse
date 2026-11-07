@@ -44,6 +44,7 @@ from ..transactions import (
 from ..transfers import create_transfer, get_transfer, update_transfer
 from ..wallets import create_wallet, list_wallets, update_wallet
 from . import common, shortcuts
+from .category_combo import CategoryCombo
 
 
 def _buttons(dialog, accept_text="Zapisz", shortcut=None):
@@ -173,7 +174,7 @@ class _ProductRowsMixin:
         self.table.insertRow(index)
         name = QLineEdit(row["name"])
         name.setMaxLength(200)
-        category = QComboBox()
+        category = CategoryCombo()
         category.addItem("Bez kategorii", None)
         for item in self.categories:
             category.addItem(item["name"], item["id"])
@@ -297,7 +298,7 @@ class _ProductRowsMixin:
             rows.append(
                 {
                     "name": self.table.cellWidget(index, self.NAME).text(),
-                    "category": self.table.cellWidget(index, self.CATEGORY).currentData(),
+                    "category": self.table.cellWidget(index, self.CATEGORY).selected_category(),
                     "quantity": self.table.cellWidget(index, self.QUANTITY).text(),
                     "price": self.table.cellWidget(index, self.PRICE).text(),
                     "total": value.text() if value.property("fixed") else "",
