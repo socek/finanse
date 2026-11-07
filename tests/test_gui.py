@@ -966,8 +966,8 @@ def test_transaction_can_be_deleted_from_menu_and_key(db, errors, monkeypatch):
     day.setExpanded(True)
     tab.tree.setCurrentItem(day.child(0))
     menu = tab._entry_menu()
-    assert [action.text() for action in menu.actions()] == ["Edytuj", "Usuń"]
-    menu.actions()[1].trigger()
+    assert [action.text() for action in menu.actions()] == ["Edytuj", "Duplikuj", "Usuń"]
+    menu.actions()[2].trigger()
     assert questions == ["Usunąć transakcję „Zakupy”?"]
     assert get_wallet(db, wallet)["balance_cents"] < 10000
     assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2

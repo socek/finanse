@@ -2,6 +2,9 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Duplikowanie transakcji w zakładkach Portfele i Produkty, przyciskiem, z menu pod prawym
+  przyciskiem myszy i skrótem Ctrl+Shift+C. Kopia otwiera się jako nowa transakcja, w której
+  przed zapisem można zmienić datę, portfel i produkty.
 - Podpowiedzi nazw produktów z historii w oknach transakcji, płatności i transakcji
   cyklicznych. Wybrana nazwa uzupełnia puste pola: kategorię, ostatnią cenę i stawkę VAT.
 - Prognoza salda na koniec miesiąca w zakładce Portfele i okno prognozy na wybrany dzień,

@@ -27,6 +27,7 @@ ACTIONS = (
     Action("delete_wallet", "Usunięcie podświetlonego portfela", "Ctrl+Shift+Del"),
     Action("edit_selected", "Edycja zaznaczonej pozycji", "F2"),
     Action("delete_selected", "Usunięcie zaznaczonej pozycji", "Del"),
+    Action("duplicate_selected", "Duplikowanie zaznaczonej transakcji", "Ctrl+Shift+C"),
     Action("pay_selected", "Zapłata zaznaczonej transakcji cyklicznej", "Ctrl+P"),
     Action("search", "Przejście do szukania", "Ctrl+F"),
     Action("clear_filters", "Wyczyszczenie filtrów", "Ctrl+Shift+F"),

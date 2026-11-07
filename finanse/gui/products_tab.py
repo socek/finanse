@@ -83,6 +83,9 @@ class ProductsTab(QWidget):
             "Ceny zaznaczonego produktu we wszystkich wydatkach i porównanie sklepów."
         )
         self.price_button.clicked.connect(self.show_price_history)
+        self.duplicate_button = QPushButton("Duplikuj transakcję")
+        shortcuts.show_on(self.duplicate_button, "duplicate_selected")
+        self.duplicate_button.clicked.connect(self.duplicate_transaction)
         self.edit_button = QPushButton("Edytuj transakcję")
         shortcuts.show_on(self.edit_button, "edit_selected")
         self.edit_button.clicked.connect(self.edit_transaction)
@@ -91,6 +94,7 @@ class ProductsTab(QWidget):
         actions.addWidget(self.collapse_all_button)
         actions.addStretch()
         actions.addWidget(self.price_button)
+        actions.addWidget(self.duplicate_button)
         actions.addWidget(self.edit_button)
 
         right = QWidget()
@@ -230,6 +234,7 @@ class ProductsTab(QWidget):
         selected = self.selected_transaction() is not None
         self.edit_button.setEnabled(selected)
         self.price_button.setEnabled(selected)
+        self.duplicate_button.setEnabled(selected)
 
     def show_price_history(self):
         name = self.selected_product_name()
@@ -245,8 +250,22 @@ class ProductsTab(QWidget):
             return
         menu = QMenu(self)
         menu.addAction("Edytuj transakcję", self.edit_transaction)
+        menu.addAction("Duplikuj transakcję", self.duplicate_transaction)
         menu.addAction("Historia ceny", self.show_price_history)
         menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def duplicate_selected(self):
+        self.duplicate_transaction()
+
+    def duplicate_transaction(self):
+        transaction_id = self.selected_transaction()
+        if transaction_id is None:
+            return
+        wallet = get_wallet(self.db, get_transaction(self.db, transaction_id)["wallet_id"])
+        dialog = TransactionDialog(self.db, wallet, parent=self, copy_from=transaction_id)
+        if dialog.exec():
+            self.refresh_products()
+            self.flash_transaction(dialog.transaction_id)
 
     def edit_transaction(self):
         transaction_id = self.selected_transaction()

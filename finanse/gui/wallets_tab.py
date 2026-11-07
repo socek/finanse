@@ -125,6 +125,9 @@ class WalletsTab(QWidget):
         self.edit_entry_button = QPushButton("Edytuj operację")
         shortcuts.show_on(self.edit_entry_button, "edit_selected")
         self.edit_entry_button.clicked.connect(self.edit_entry)
+        self.duplicate_button = QPushButton("Duplikuj")
+        shortcuts.show_on(self.duplicate_button, "duplicate_selected")
+        self.duplicate_button.clicked.connect(self.duplicate_transaction)
         self.delete_entry_button = QPushButton("Usuń operację")
         shortcuts.show_on(self.delete_entry_button, "delete_selected")
         self.delete_entry_button.clicked.connect(self.delete_entry)
@@ -138,6 +141,7 @@ class WalletsTab(QWidget):
         entry_actions.addWidget(self.expand_all_button)
         entry_actions.addWidget(self.collapse_all_button)
         entry_actions.addStretch()
+        entry_actions.addWidget(self.duplicate_button)
         entry_actions.addWidget(self.edit_entry_button)
         entry_actions.addWidget(self.delete_entry_button)
 
@@ -391,6 +395,8 @@ class WalletsTab(QWidget):
             return None
         menu = QMenu(self)
         menu.addAction("Edytuj", self.edit_entry)
+        if self.selected_entry()[0] == "transaction":
+            menu.addAction("Duplikuj", self.duplicate_transaction)
         menu.addAction("Usuń", self.delete_entry)
         return menu
 
@@ -404,9 +410,10 @@ class WalletsTab(QWidget):
             menu.exec(self.tree.viewport().mapToGlobal(position))
 
     def _update_entry_buttons(self, *_):
-        selected = self.selected_entry() is not None
-        self.edit_entry_button.setEnabled(selected)
-        self.delete_entry_button.setEnabled(selected)
+        entry = self.selected_entry()
+        self.edit_entry_button.setEnabled(entry is not None)
+        self.delete_entry_button.setEnabled(entry is not None)
+        self.duplicate_button.setEnabled(entry is not None and entry[0] == "transaction")
 
     # Działania
 
@@ -448,6 +455,25 @@ class WalletsTab(QWidget):
             self.tree.flash(lambda candidate: candidate == key)
             return dialog.transaction_id
         return None
+
+    def duplicate_selected(self):
+        self.duplicate_transaction()
+
+    def duplicate_transaction(self):
+        """Zwraca identyfikator dodanej kopii albo None; przelewów nie kopiuje."""
+        entry = self.selected_entry()
+        if entry is None or entry[0] != "transaction":
+            return None
+        source = get_transaction(self.db, entry[1])
+        wallet = get_wallet(self.db, source["wallet_id"])
+        dialog = TransactionDialog(self.db, wallet, parent=self, copy_from=entry[1])
+        if not dialog.exec():
+            return None
+        self._show_wallets(dialog.selected_wallet_id())
+        self.refresh()
+        key = ("transaction", dialog.transaction_id)
+        self.tree.flash(lambda candidate: candidate == key)
+        return dialog.transaction_id
 
     def create_transfer(self):
         if len(list_wallets(self.db)) < 2:

@@ -60,6 +60,7 @@ class MainWindow(QMainWindow):
             "delete_wallet": lambda: self._wallet_action(self.wallets.delete_wallet),
             "edit_selected": lambda: self._on_current_tab("edit_selected"),
             "pay_selected": lambda: self._on_current_tab("pay_selected"),
+            "duplicate_selected": lambda: self._on_current_tab("duplicate_selected"),
             "search": lambda: self._on_current_tab("focus_search"),
             "clear_filters": lambda: self._on_current_tab("clear_filters"),
             "expand_all": lambda: self._on_current_tab("expand_all"),

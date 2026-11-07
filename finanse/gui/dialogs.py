@@ -54,7 +54,7 @@ from ..transactions import (
     update_transaction,
 )
 from ..transfers import create_transfer, get_transfer, update_transfer
-from ..wallets import PLAIN, VAT, create_wallet, list_wallets, update_wallet
+from ..wallets import PLAIN, VAT, create_wallet, get_wallet, list_wallets, update_wallet
 from . import common, shortcuts
 from .category_combo import CategoryCombo
 
@@ -519,18 +519,32 @@ class TransactionDialog(_ProductRowsMixin, _SavingDialog):
     # dopisywać kilka transakcji z przeszłości.
     remembered_date = None
 
-    def __init__(self, db, wallet, transaction_id=None, parent=None, initial=None):
+    def __init__(
+        self, db, wallet, transaction_id=None, parent=None, initial=None, copy_from=None
+    ):
+        """`copy_from` otwiera nową transakcję wypełnioną kopią istniejącej."""
         super().__init__(parent)
         self.db = db
         self.wallet = wallet
         self.transaction_id = transaction_id
-        self.setWindowTitle("Edycja transakcji" if transaction_id else "Nowa transakcja")
+        if transaction_id:
+            title = "Edycja transakcji"
+        elif copy_from:
+            title = "Kopia transakcji"
+        else:
+            title = "Nowa transakcja"
+        self.setWindowTitle(title)
 
-        data = initial or (
-            get_transaction(db, transaction_id)
-            if transaction_id
-            else {"kind": "expense", "occurred_on": None, "description": "", "rows": []}
-        )
+        if copy_from:
+            data = get_transaction(db, copy_from)
+            # Kopia zaczyna w portfelu oryginału; można go zmienić przed zapisem.
+            self.wallet = wallet = get_wallet(db, data["wallet_id"])
+        else:
+            data = initial or (
+                get_transaction(db, transaction_id)
+                if transaction_id
+                else {"kind": "expense", "occurred_on": None, "description": "", "rows": []}
+            )
 
         self.kind = _kind_combo(data["kind"])
         is_new = transaction_id is None and initial is None

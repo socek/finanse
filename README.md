@@ -15,6 +15,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - historia ceny produktu: najniższa, najwyższa i średnia cena, wykres oraz porównanie sklepów
 - podpowiedzi nazw produktów z historii, które uzupełniają kategorię, ostatnią cenę i stawkę VAT
 - przelewy między portfelami, także w różnych walutach
+- duplikowanie transakcji: nowa transakcja z kopią produktów, opisu i portfela
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
 - prognoza salda na koniec miesiąca lub wybrany dzień, z płatności cyklicznych i operacji
