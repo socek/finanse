@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from ..bank_import import load_file
 from ..errors import ValidationError
+from ..forecast import balance_forecast
 from ..money import format_money, format_totals
 from ..transactions import delete_transaction, get_transaction
 from ..transfers import delete_transfer
@@ -41,6 +42,7 @@ from .day_list import (
     wallet_panel,
 )
 from .dialogs import TransactionDialog, TransferDialog, WalletDialog
+from .forecast_dialog import ForecastDialog
 from .import_dialog import ImportDialog
 
 ENTRY_ROLE = KEY_ROLE
@@ -72,6 +74,11 @@ class WalletsTab(QWidget):
         balance_font = QFont(self.balance.font())
         balance_font.setPointSizeF(balance_font.pointSizeF() * 1.2)
         self.balance.setFont(balance_font)
+        self.forecast = common.plain_label()
+        self.forecast.setToolTip(
+            "Saldo dziś, operacje wpisane z późniejszą datą i płatności cykliczne"
+            " z terminem do końca miesiąca, także zaległe."
+        )
 
         self.new_transaction_button = QPushButton("Nowa transakcja")
         shortcuts.show_on(self.new_transaction_button, "new_transaction")
@@ -79,7 +86,12 @@ class WalletsTab(QWidget):
         self.transfer_button = QPushButton("Przelew")
         shortcuts.show_on(self.transfer_button, "new_transfer")
         self.transfer_button.clicked.connect(self.create_transfer)
-        self.wallet_actions = [self.new_transaction_button, self.transfer_button]
+        self.forecast_button = QPushButton("Prognoza salda")
+        self.forecast_button.setToolTip("Prognoza salda zaznaczonych portfeli na wybrany dzień.")
+        self.forecast_button.clicked.connect(self.show_forecast)
+        self.wallet_actions = [
+            self.new_transaction_button, self.transfer_button, self.forecast_button,
+        ]  # fmt: skip
         actions = QHBoxLayout()
         for button in self.wallet_actions:
             actions.addWidget(button)
@@ -134,6 +146,7 @@ class WalletsTab(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.addLayout(title_row(self.title, self.last_transaction))
         right_layout.addWidget(self.balance)
+        right_layout.addWidget(self.forecast)
         right_layout.addLayout(actions)
         right_layout.addWidget(self.filter_bar)
         right_layout.addWidget(self.summary)
@@ -227,6 +240,29 @@ class WalletsTab(QWidget):
         self.balance.setStyleSheet(
             f"color: {common.negative_color().name()}" if negative else ""
         )
+        self._update_forecast(checked)
+
+    def _update_forecast(self, checked):
+        if not checked:
+            self.forecast.hide()
+            return
+        forecast = balance_forecast(self.db, wallet_ids=set(checked))
+        totals = {
+            currency: total["forecast"] for currency, total in forecast["totals"].items()
+        }
+        text = f"Prognoza na koniec miesiąca ({forecast['until']}): {format_totals(totals)}"
+        if forecast["unknown"]:
+            text += f" · płatności bez kwoty: {forecast['unknown']}"
+        self.forecast.setText(text)
+        negative = any(total < 0 for total in totals.values())
+        self.forecast.setStyleSheet(
+            f"color: {common.negative_color().name()}" if negative else ""
+        )
+        self.forecast.show()
+
+    def show_forecast(self):
+        checked = set(self.wallet_list.checked_ids())
+        ForecastDialog(self.db, checked or None, parent=self).exec()
 
     def refresh_entries(self, *_):
         wallet_ids = self.wallet_list.checked_ids()

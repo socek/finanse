@@ -2,6 +2,8 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Prognoza salda na koniec miesiąca w zakładce Portfele i okno prognozy na wybrany dzień,
+  z płatnościami cyklicznymi, także zaległymi, i operacjami wpisanymi z późniejszą datą.
 - Historia ceny produktu w zakładce Produkty: ostatnia, najniższa, najwyższa i średnia cena,
   zmiana od pierwszego zakupu, wykres ceny w czasie i porównanie sklepów.
 - Raporty za rok i za dowolny zakres dat, obok miesięcznych. Wykres pokazuje miesiące okresu,

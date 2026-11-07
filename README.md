@@ -16,6 +16,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - przelewy między portfelami, także w różnych walutach
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
+- prognoza salda na koniec miesiąca lub wybrany dzień, z płatności cyklicznych i operacji
+  wpisanych z późniejszą datą
 - raporty za miesiąc, rok lub dowolny zakres dat z wybranych portfeli jednej waluty:
   bilans, rozbicie na portfele, podział na kategorie i wykres według miesięcy lub lat
 - miesięczne budżety kategorii, osobno dla każdej waluty, z paskiem wykorzystania
@@ -146,6 +148,13 @@ Historia ceny, otwierana w zakładce **Produkty**, zbiera wydatki na produkt o t
 nazwie, bez względu na wielkość liter i nadmiarowe spacje, osobno dla każdej waluty.
 Sklepem jest opis transakcji. Średnia to kwota zapłacona za jednostkę: suma wartości
 podzielona przez sumę ilości.
+
+Prognoza salda to saldo na koniec dzisiejszego dnia, operacje i przelewy wpisane już
+z późniejszą datą oraz płatności cykliczne z terminem do wybranego dnia, także zaległe
+i powtarzające się kilka razy w okresie, z uwzględnieniem licznika. Płatności szablonów
+bez produktów są wymienione, ale nie zmieniają prognozy, bo nie mają kwoty. Zakładka
+**Portfele** pokazuje prognozę zaznaczonych portfeli na koniec miesiąca, a przycisk
+**Prognoza salda** otwiera szczegóły z wyborem dnia.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.
