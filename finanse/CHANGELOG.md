@@ -1,6 +1,6 @@
 # Historia zmian
 
-## 0.2 (w przygotowaniu)
+## 0.2 (2026-11-07)
 
 - Przywracanie kopii bazy z okna Kopie i pliki danych albo z dowolnego pliku, bez zamykania
   aplikacji. Kopia jest najpierw sprawdzana, starsza wersja od razu migrowana, a obecne dane
