@@ -1268,7 +1268,7 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 9
+    assert window.tabs.count() == 5
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None
@@ -1280,7 +1280,7 @@ def test_history_tab_shows_changes_as_read_only_text(db, errors):
     window = MainWindow(db)
     assert "Historia jest pusta" in window.history.text.toPlainText()
     create_wallet(db, "<b>Portfel</b>")
-    window.tabs.setCurrentWidget(window.history)
+    window.history_dialog.open_page()
     assert "Dodano portfel „<b>Portfel</b>”" in window.history.text.toPlainText()
     assert window.history.text.isReadOnly()
 
@@ -1289,7 +1289,7 @@ def test_files_tab_lists_files_with_sums(db, errors, tmp_path):
     (tmp_path / "test.db.backup-v2").write_bytes(b"x" * 2048)
     (tmp_path / "notatka.txt").write_bytes(b"x" * 10)
     window = MainWindow(db)
-    window.tabs.setCurrentWidget(window.files)
+    window.files_dialog.open_page()
     tree = window.files.tree
     groups = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
     assert groups == [
@@ -1305,15 +1305,14 @@ def test_files_tab_lists_files_with_sums(db, errors, tmp_path):
     assert str(tmp_path) in window.files.directory.text()
 
     (tmp_path / "nowy.txt").write_bytes(b"x")
-    window.tabs.setCurrentWidget(window.wallets)
-    window.tabs.setCurrentWidget(window.files)
+    window.files_dialog.open_page()
     assert "plików: 4" in window.files.total.text()
 
 
 def test_about_tab_shows_version_and_changelog(db, errors):
     window = MainWindow(db)
-    window.tabs.setCurrentWidget(window.about)
-    assert window.tabs.tabText(window.tabs.currentIndex()) == "O programie"
+    window.about_dialog.open_page()
+    assert window.about_dialog.windowTitle() == "O programie"
     assert window.about.version.text() == f"Wersja {__version__}"
     text = window.about.changelog.toPlainText()
     assert "Historia zmian" in text and f"{__version__} (" in text

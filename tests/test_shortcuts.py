@@ -80,7 +80,7 @@ def test_every_main_action_is_bound(window):
         assert shortcuts.text_of(shortcut.key()) == shortcuts.default_text(key)
 
 
-@pytest.mark.parametrize("number", range(1, 10))
+@pytest.mark.parametrize("number", range(1, 6))
 def test_ctrl_number_switches_tabs(window, number):
     key = getattr(Qt.Key, f"Key_{number}")
     press(window, key, CTRL)
@@ -194,8 +194,8 @@ def test_actions_without_wallet_report_it(db, window, errors):
 
 
 def test_actions_on_unrelated_tab_do_nothing(db, window, errors):
-    window.tabs.setCurrentWidget(window.history)
-    for key in ("edit_selected", "pay_selected", "search", "expand_all", "next_month"):
+    window.tabs.setCurrentWidget(window.reports)
+    for key in ("edit_selected", "pay_selected", "search", "expand_all", "duplicate_selected"):
         window.action_shortcuts[key].activated.emit()
     assert errors == []
 
@@ -210,7 +210,7 @@ def test_quit_key_closes_window(db, errors):
 
 def test_changing_shortcut_works_at_once_and_is_saved(db, window):
     create_wallet(db, "A")
-    window.tabs.setCurrentWidget(window.settings)
+    window.settings_dialog.open_page()
     editor_set(window, "tab_1", "Ctrl+Shift+1")
     assert window.action_shortcuts["tab_1"].key().toString() == "Ctrl+Shift+1"
     path = str(window.settings.database)

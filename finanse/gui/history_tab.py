@@ -4,7 +4,7 @@ from ..history import history_text
 
 
 class HistoryTab(QWidget):
-    """Historia zmian jako tekst do odczytu; odświeża się przy wejściu na zakładkę."""
+    """Historia zmian jako tekst do odczytu; odświeża się przy każdym otwarciu okna."""
 
     def __init__(self, db, parent=None):
         super().__init__(parent)

@@ -115,6 +115,10 @@ _system_look = None  # styl i paleta sprzed pierwszego użycia motywu
 _current = SYSTEM
 
 
+def current_theme():
+    return _current
+
+
 def color_override(name):
     """Kolor znaczeniowy aktualnego motywu albo None, gdy motyw go nie zmienia."""
     return THEMES.get(_current, {}).get(name)

@@ -141,4 +141,4 @@ class SettingsTab(QWidget):
         self._shortcuts_changed()
 
     def refresh(self):
-        """Ustawienia nie zależą od danych, ale każda zakładka odświeża się przy wejściu."""
+        """Ustawienia nie zależą od danych, ale okno odświeża stronę przy każdym otwarciu."""

@@ -30,4 +30,4 @@ class AboutTab(QWidget):
         layout.addWidget(self.changelog, 1)
 
     def refresh(self):
-        """Treść jest stała, ale każda zakładka odświeża się przy wejściu."""
+        """Treść jest stała, ale okno odświeża stronę przy każdym otwarciu."""

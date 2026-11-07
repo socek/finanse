@@ -1,4 +1,4 @@
-"""Zakładka z plikami danych, ich rozmiarem i sumami."""
+"""Strona z plikami danych, ich rozmiarem i sumami."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -19,7 +19,7 @@ NAME, SIZE, MODIFIED = range(3)
 
 
 class FilesTab(QWidget):
-    """Odświeża się przy wejściu na zakładkę."""
+    """Odświeża się przy każdym otwarciu okna."""
 
     def __init__(self, db, parent=None):
         super().__init__(parent)

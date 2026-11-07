@@ -2,6 +2,10 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Pasek menu: Plik, Edycja, Widok, Portfel, Transakcja, Raport i Pomoc, z aktualnymi skrótami
+  i wyszarzeniem działań bez zaznaczenia. Zostało pięć zakładek z danymi, a Historia, Pliki,
+  Ustawienia i O programie otwierają się w osobnych oknach. Ustawienia mają skrót Ctrl+,,
+  a skróty Ctrl+6–Ctrl+9 są wolne.
 - Tagi transakcji niezależne od kategorii, np. „Wakacje 2026” albo „Remont”: pole z podpowiedziami
   w oknie transakcji, tagi przy opisie na liście, filtr po tagu, sekcja „Według tagów” w raporcie
   oraz zmiana nazwy i usuwanie w zakładce Kategorie.

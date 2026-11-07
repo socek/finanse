@@ -30,7 +30,9 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
-- skróty klawiszowe do większości działań, zmieniane w zakładce **Ustawienia**
+- pasek menu ze wszystkimi działaniami i pięć zakładek z danymi; historia, pliki, ustawienia
+  i informacje o programie otwierają się w osobnych oknach
+- skróty klawiszowe do większości działań, zmieniane w oknie **Edycja → Ustawienia** (Ctrl+,)
 - własny pasek tytułowy w każdym oknie, dla menedżerów okien bez dekoracji, np. Hyprland
 
 ## Uruchomienie
@@ -57,12 +59,12 @@ Menedżery okien takie jak Hyprland czy sway nie rysują pasków tytułowych, wi
 może dodać własny do każdego okna: głównego, formularzy, komunikatów i zapytań. Pasek
 pokazuje tytuł okna i przycisk zamknięcia, a przeciągnięcie go przesuwa pływające okno.
 Domyślnie jest włączony, gdy `XDG_CURRENT_DESKTOP` wskazuje taki pulpit. Przełącznik
-w zakładce **Ustawienia** zapisuje wybór w `settings.json`.
+w menu **Widok** i w oknie ustawień zapisuje wybór w `settings.json`.
 
 ## Wersja i historia zmian
 
 Wersja jest w `finanse/__init__.py`, a historia zmian w `finanse/CHANGELOG.md`.
-Obie widać w zakładce **O programie**. Nową wersję trzeba dopisać do historii zmian.
+Obie widać w oknie **Pomoc → O programie**. Nową wersję trzeba dopisać do historii zmian.
 
 ## Aktualizacja bazy
 
@@ -77,8 +79,8 @@ Kopie sprzed tej migracji nadal zawierają tabelę `users` z hashami haseł.
 ## Historia i kopie
 
 Triggery zapisują każdą zmianę w tabeli `change_log`, razem ze starymi i nowymi
-wartościami, także zmiany wykonane poza aplikacją, np. w konsoli `sqlite3`. Zakładka
-**Historia** pokazuje je jako tekst. Dziennik nie jest czyszczony, więc zostają w nim
+wartościami, także zmiany wykonane poza aplikacją, np. w konsoli `sqlite3`. Okno
+**Pomoc → Historia zmian danych** pokazuje je jako tekst. Dziennik nie jest czyszczony, więc zostają w nim
 również usunięte dane. Nie ma jeszcze przycisku cofania zmian. Nowa kolumna lub tabela
 wymaga przebudowy triggerów w migracji.
 
@@ -86,7 +88,7 @@ Przy każdym uruchomieniu aplikacja zapisuje kopię całej bazy w `~/.finanse/ba
 i zostawia 30 najnowszych. Aby wrócić do kopii, zamknij aplikację i podmień nią plik
 `~/.finanse/finanse.db`.
 
-Zakładka **Pliki** pokazuje pliki z katalogu bazy i podkatalogu `backups`, ich rozmiar
+Okno **Plik → Kopie i pliki danych** pokazuje pliki z katalogu bazy i podkatalogu `backups`, ich rozmiar
 oraz sumy dla każdej grupy i całości.
 
 ## Import z banku
@@ -143,7 +145,7 @@ do wybranego miesiąca, miesiące wybranego roku, a dla zakresu jego miesiące a
 zakresie dłuższym niż 24 miesiące, lata. Kliknięcie słupka otwiera raport tego miesiąca
 lub roku. Przyciski poprzedni i następny przesuwają okres o jego długość.
 
-Budżet to miesięczny limit wydatków w kategorii, ustawiany w zakładce **Kategorie**
+Budżet to miesięczny limit wydatków w kategorii, ustawiany w zakładce **Kategorie i tagi**
 osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z wydatkami
 z portfeli wybranych w raporcie, bez przychodów i przelewów. W raporcie za rok lub zakres dat limit
 jest mnożony przez liczbę miesięcy, a niepełny miesiąc liczy się według dni. Od 80% limitu pasek jest
@@ -170,7 +172,7 @@ Tagi wpisuje się w oknie transakcji po przecinku, a nowy tag powstaje przy zapi
 porównuje się bez wielkości liter, także polskich. Tag ma cała transakcja, nie pojedynczy
 produkt. Listy można filtrować po tagu, szukanie znajduje transakcje także po nazwie tagu,
 a raport pokazuje przychody, wydatki i bilans każdego tagu w okresie. Zmiana nazwy i usuwanie
-tagów są w zakładce **Kategorie**; usunięcie tagu nie usuwa transakcji.
+tagów są w zakładce **Kategorie i tagi**; usunięcie tagu nie usuwa transakcji.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.
