@@ -47,3 +47,22 @@ def default_shortcuts():
     shortcuts.forget()
     yield
     shortcuts.forget()
+
+
+@pytest.fixture(autouse=True)
+def delete_windows():
+    """Usuwa okna po teście, zanim zrobi to kończący się interpreter.
+
+    Okna z testów nie mają rodzica. Gdy zostawały do końca procesu, Python i Qt usuwały
+    je w przypadkowej kolejności, co czasem kończyło się awarią już po udanych testach.
+    """
+    yield
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        widget.hide()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
