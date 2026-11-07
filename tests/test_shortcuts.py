@@ -9,6 +9,7 @@ from finanse.db import connect, init_db
 from finanse.gui import common, shortcuts
 from finanse.gui.dialogs import PaymentDialog, TransactionDialog
 from finanse.gui.main_window import MainWindow
+from finanse.gui.recurring_tab import PAY
 from finanse.recurring import create_recurring, get_recurring
 from finanse.settings import load_settings
 from finanse.transactions import create_transaction
@@ -400,11 +401,11 @@ def test_pay_row_button_tooltip_follows_change(db, window):
     wallet = create_wallet(db, "A")
     create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1"))
     window.recurring.refresh()
-    pay = window.recurring.table.cellWidget(0, 7)
+    pay = window.recurring.table.cellWidget(0, PAY)
     assert pay.text() == "Zapłać"
     assert "Skrót: Ctrl+P" in pay.toolTip()
     editor_set(window, "pay_selected", "Ctrl+J")
-    assert "Skrót: Ctrl+J" in window.recurring.table.cellWidget(0, 7).toolTip()
+    assert "Skrót: Ctrl+J" in window.recurring.table.cellWidget(0, PAY).toolTip()
 
 
 def test_category_delete_tooltip_combines_reason_and_shortcut(db, window):

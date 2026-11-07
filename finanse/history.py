@@ -71,6 +71,12 @@ def _vat_rate(value, _names):
     return f"{value}%"
 
 
+def _period_unit(value, _names):
+    return {"day": "dni", "week": "tygodnie", "month": "miesiące", "year": "lata"}.get(
+        value, value
+    )
+
+
 def _wallet_type(value, _names):
     return {"vat": "z VAT", "plain": "zwykły"}.get(value, value)
 
@@ -118,6 +124,9 @@ FIELDS = {
         ("category_id", "kategoria", _category, "bez kategorii"),
         ("remaining", "licznik", _plain, "bez limitu"),
         ("last_paid_on", "ostatnia płatność", _plain, "brak"),
+        ("next_due_on", "termin", _plain, "bez terminu"),
+        ("period_count", "co ile", _plain, "brak"),
+        ("period_unit", "okres", _period_unit, "brak"),
     ),
     "recurring_products": _PRODUCT_FIELDS,
 }
@@ -154,9 +163,11 @@ def _fields(table, values):
 
 
 def _is_plain_default(field, values):
-    """Opis pozycji bez VAT nie musi tego wyliczać."""
+    """Opis pozycji bez VAT ani transakcji bez terminu nie musi tego wyliczać."""
     if field[0] in ("vat_rate", "vat_cents"):
         return values.get("vat_rate") is None
+    if field[0] in ("next_due_on", "period_count", "period_unit"):
+        return values.get("period_unit") is None
     return field[0] == "wallet_type" and values.get("wallet_type") == "plain"
 
 

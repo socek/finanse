@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -33,10 +34,13 @@ from ..money import (
     unit_price,
 )
 from ..recurring import (
+    MAX_PERIOD_COUNT,
+    PERIOD_UNITS,
     create_recurring,
     get_recurring,
     pay_recurring,
     payment_draft,
+    unit_name,
     update_recurring,
 )
 from ..transactions import (
@@ -628,6 +632,9 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
                 "kind": "expense",
                 "description": "",
                 "remaining": None,
+                "next_due_on": None,
+                "period_unit": None,
+                "period_count": None,
                 "rows": [],
             }
         )
@@ -651,11 +658,32 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
         )
         self.remaining.setPlaceholderText("puste: bez limitu")
 
+        self.period_count = QSpinBox()
+        self.period_count.setRange(1, MAX_PERIOD_COUNT)
+        self.period_count.setPrefix("co ")
+        self.period_count.setValue(data["period_count"] or 1)
+        self.period_unit = QComboBox()
+        self.period_unit.addItem("bez terminu", None)
+        for unit in PERIOD_UNITS:
+            self.period_unit.addItem("", unit)
+        self.period_unit.setCurrentIndex(
+            max(self.period_unit.findData(data["period_unit"]), 0)
+        )
+        self.next_due_on = common.date_edit(data["next_due_on"])
+        schedule = QHBoxLayout()
+        schedule.addWidget(self.period_count)
+        schedule.addWidget(self.period_unit, 1)
+
         top = QFormLayout()
         top.addRow("Portfel", self.wallet)
         top.addRow("Rodzaj", self.kind)
         top.addRow("Opis", self.description)
         top.addRow("Licznik płatności", self.remaining)
+        top.addRow("Powtarzanie", schedule)
+        top.addRow("Następna płatność", self.next_due_on)
+        self.period_count.valueChanged.connect(self._update_schedule)
+        self.period_unit.currentIndexChanged.connect(self._update_schedule)
+        self._update_schedule()
 
         bottom = self._product_section(data["rows"], categories)
         hint = QLabel(
@@ -679,6 +707,24 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
     def _currency(self):
         return self.currencies.get(self.wallet.currentData(), "")
 
+    def _update_schedule(self):
+        """Nazwy okresów odmieniają się przez liczbę, a bez terminu pola są wyłączone."""
+        count = self.period_count.value()
+        for index in range(1, self.period_unit.count()):
+            self.period_unit.setItemText(
+                index, unit_name(self.period_unit.itemData(index), count)
+            )
+        scheduled = self.period_unit.currentData() is not None
+        self.period_count.setEnabled(scheduled)
+        self.next_due_on.setEnabled(scheduled)
+
+    def schedule(self):
+        return {
+            "unit": self.period_unit.currentData(),
+            "count": self.period_count.value(),
+            "next_due_on": common.iso_date(self.next_due_on),
+        }
+
     def save(self):
         values = (
             self.wallet.currentData(),
@@ -686,6 +732,7 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
             self.description.text(),
             self.remaining.text(),
             self.rows(),
+            self.schedule(),
         )
         if self.recurring_id is None:
             self.recurring_id = create_recurring(self.db, *values)

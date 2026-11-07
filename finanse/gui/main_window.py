@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
+from ..recurring import count_due
 from ..settings import load_settings
 from ..storage import database_path
 from . import common, shortcuts
@@ -43,6 +44,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.about, "O programie")
         # Każda zakładka czyta z bazy przy wejściu, więc widzi zmiany z pozostałych.
         self.tabs.currentChanged.connect(lambda _: self.tabs.currentWidget().refresh())
+        # Liczba zaległych płatności w nazwie zakładki; data mogła się zmienić od startu.
+        self.recurring.due_count_changed.connect(self.show_due_count)
+        self.tabs.currentChanged.connect(lambda _: self.show_due_count(count_due(db)))
+        self.show_due_count(count_due(db))
         self.setCentralWidget(self.tabs)
 
         actions = {
@@ -72,6 +77,13 @@ class MainWindow(QMainWindow):
             key: shortcuts.bind(key, self, callback) for key, callback in actions.items()
         }
         self.new_transaction_shortcut = self.action_shortcuts["new_transaction"]
+
+    def show_due_count(self, count):
+        index = self.tabs.indexOf(self.recurring)
+        self.tabs.setTabText(index, f"Cykliczne ({count})" if count else "Cykliczne")
+        self.tabs.setTabToolTip(
+            index, f"Płatności po terminie lub na dzisiaj: {count}" if count else ""
+        )
 
     def _on_current_tab(self, method):
         """Działanie dotyczy widocznej zakładki; pozostałe zakładki je pomijają."""

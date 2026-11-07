@@ -13,7 +13,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   kategorii i kwocie
 - kategorie przypisywane do produktów, więc jeden paragon może mieć kilka kategorii
 - przelewy między portfelami, także w różnych walutach
-- transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami i licznikiem
+- transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
+  i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
   portfele, podział na kategorie i wykres z 12 miesięcy
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
@@ -109,6 +110,13 @@ W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i
 to wartość pomniejszona o `vat_cents`. Stawki to 23%, 8%, 5%, 0% i zwolnienie. Zestawienie
 VAT sumuje stawki z transakcji wybranego miesiąca, według ich daty, i nie zastępuje
 rozliczenia z księgowością.
+
+Transakcja cykliczna może mieć termin następnej płatności i okres: co ileś dni, tygodni,
+miesięcy lub lat. Płatność i przycisk **Pomiń termin** przesuwają termin o jeden okres,
+licząc od poprzedniego terminu, a nie od daty płatności. Termin miesięczny lub roczny
+wraca do pierwotnego dnia, np. 31 stycznia, 28 lutego, 31 marca. Zakładka pokazuje
+w nazwie liczbę płatności po terminie lub na dzisiaj, a na liście wyróżnia zaległe
+oraz te z terminem w ciągu 7 dni.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

@@ -1,15 +1,23 @@
+from datetime import date
+
 import pytest
 
 from helpers import priced
 
 from finanse.errors import ValidationError
 from finanse.recurring import (
+    advance_due,
+    count_due,
     create_recurring,
+    days_until_due,
     delete_recurring,
+    due_text,
     get_recurring,
     list_recurring,
     pay_recurring,
     payment_draft,
+    period_text,
+    skip_due,
     update_recurring,
 )
 from finanse.transactions import delete_transaction, get_transaction
@@ -190,3 +198,162 @@ def test_wallet_and_category_deletion(db):
     delete_wallet(db, wallet)
     assert list_recurring(db) == []
     assert db.execute("SELECT COUNT(*) FROM recurring_products").fetchone()[0] == 0
+
+
+def monthly(on="2026-11-10", count="1", unit="month"):
+    return {"unit": unit, "count": count, "next_due_on": on}
+
+
+@pytest.mark.parametrize(
+    ("due_on", "unit", "count", "due_day", "expected"),
+    [
+        ("2026-11-10", "day", 3, None, "2026-11-13"),
+        ("2026-12-30", "week", 1, None, "2027-01-06"),
+        ("2026-11-10", "month", 1, 10, "2026-12-10"),
+        ("2026-11-10", "month", 3, 10, "2027-02-10"),
+        ("2027-01-31", "month", 1, 31, "2027-02-28"),
+        ("2027-02-28", "month", 1, 31, "2027-03-31"),
+        ("2028-02-29", "year", 1, 29, "2029-02-28"),
+        ("2029-02-28", "year", 3, 29, "2032-02-29"),
+    ],
+)
+def test_advance_due(due_on, unit, count, due_day, expected):
+    assert advance_due(due_on, unit, count, due_day) == expected
+
+
+@pytest.mark.parametrize(
+    ("unit", "count", "text"),
+    [
+        (None, 1, "bez terminu"),
+        ("month", 1, "co miesiąc"),
+        ("month", 3, "co 3 miesiące"),
+        ("month", 5, "co 5 miesięcy"),
+        ("week", 2, "co 2 tygodnie"),
+        ("day", 12, "co 12 dni"),
+        ("year", 22, "co 22 lata"),
+        ("year", 14, "co 14 lat"),
+    ],
+)
+def test_period_text(unit, count, text):
+    assert period_text(unit, count) == text
+
+
+def test_due_text():
+    assert due_text(-1) == "po terminie 1 dzień"
+    assert due_text(-3) == "po terminie 3 dni"
+    assert due_text(0) == "dzisiaj"
+    assert due_text(1) == "jutro"
+    assert due_text(5) == "za 5 dni"
+
+
+def test_schedule_is_saved_and_optional(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", schedule=monthly())
+    saved = get_recurring(db, recurring)
+    assert (saved["next_due_on"], saved["period_unit"], saved["period_count"]) == (
+        "2026-11-10", "month", 1,
+    )  # fmt: skip
+    assert saved["due_day"] == 10
+
+    update_recurring(db, recurring, wallet, "expense", "Czynsz")
+    saved = get_recurring(db, recurring)
+    assert saved["next_due_on"] is saved["period_unit"] is saved["due_day"] is None
+
+
+@pytest.mark.parametrize(
+    ("schedule", "message"),
+    [
+        (monthly(unit="hour"), "okres powtarzania"),
+        (monthly(count="0"), "Okres musi"),
+        (monthly(count="1000"), "Okres musi"),
+        (monthly(count="x"), "Okres musi"),
+        (monthly(on="2026-13-01"), "termin"),
+        (monthly(on=""), "termin"),
+    ],
+)
+def test_invalid_schedule_saves_nothing(db, schedule, message):
+    wallet = create_wallet(db, "A")
+    with pytest.raises(ValidationError, match=message):
+        create_recurring(db, wallet, "expense", "Czynsz", schedule=schedule)
+    assert list_recurring(db) == []
+
+
+def test_payment_moves_due_date_from_previous_due_date(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(
+        db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+        schedule=monthly("2027-01-31"),
+    )  # fmt: skip
+    # Spóźniona płatność nie przesuwa kolejnych terminów.
+    pay_draft(db, recurring, on="2027-02-15")
+    assert get_recurring(db, recurring)["next_due_on"] == "2027-02-28"
+    pay_draft(db, recurring, on="2027-02-20")
+    assert get_recurring(db, recurring)["next_due_on"] == "2027-03-31"
+
+
+def test_payment_without_schedule_keeps_no_due_date(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"))
+    pay_draft(db, recurring)
+    assert get_recurring(db, recurring)["next_due_on"] is None
+
+
+def test_editing_without_changing_due_date_keeps_due_day(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(
+        db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+        schedule=monthly("2027-01-31"),
+    )  # fmt: skip
+    pay_draft(db, recurring)
+    update_recurring(
+        db, recurring, wallet, "expense", "Czynsz i media", rows=priced("Czynsz", "10"),
+        schedule=monthly("2027-02-28"),
+    )  # fmt: skip
+    assert get_recurring(db, recurring)["due_day"] == 31
+    update_recurring(
+        db, recurring, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+        schedule=monthly("2027-02-27"),
+    )  # fmt: skip
+    assert get_recurring(db, recurring)["due_day"] == 27
+
+
+def test_skip_moves_due_date_without_payment(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(
+        db, wallet, "expense", "Czynsz", remaining="2", schedule=monthly()
+    )
+    skip_due(db, recurring)
+    saved = get_recurring(db, recurring)
+    assert (saved["next_due_on"], saved["remaining"], saved["last_paid_on"]) == (
+        "2026-12-10", 2, None,
+    )  # fmt: skip
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+    plain = create_recurring(db, wallet, "expense", "Bez terminu")
+    with pytest.raises(ValidationError, match="nie ma terminu"):
+        skip_due(db, plain)
+    finished = create_recurring(
+        db, wallet, "expense", "Koniec", remaining="0", schedule=monthly()
+    )
+    with pytest.raises(ValidationError, match="zera"):
+        skip_due(db, finished)
+    with pytest.raises(ValidationError, match="nie istnieje"):
+        skip_due(db, 999)
+
+
+def test_due_days_count_and_list_order(db):
+    wallet = create_wallet(db, "A")
+    today = date(2026, 11, 10)
+    create_recurring(db, wallet, "expense", "Bez terminu")
+    create_recurring(db, wallet, "expense", "Później", schedule=monthly("2026-11-20"))
+    create_recurring(db, wallet, "expense", "Zaległa", schedule=monthly("2026-11-01"))
+    create_recurring(db, wallet, "expense", "Dzisiaj", schedule=monthly("2026-11-10"))
+    create_recurring(
+        db, wallet, "expense", "Zakończona", remaining="0", schedule=monthly("2026-10-01")
+    )
+    items = list_recurring(db)
+    assert [item["description"] for item in items] == [
+        "Zaległa", "Dzisiaj", "Później", "Bez terminu", "Zakończona",
+    ]  # fmt: skip
+    assert [days_until_due(item, today) for item in items] == [-9, 0, 10, None, None]
+    assert count_due(db, today) == 2

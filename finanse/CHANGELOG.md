@@ -2,6 +2,10 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Terminy transakcji cyklicznych: okres powtarzania i data następnej płatności, którą
+  płatność przesuwa o jeden okres. Lista pokazuje zaległe i zbliżające się płatności,
+  a nazwa zakładki liczbę płatności po terminie lub na dzisiaj. Przycisk Pomiń termin
+  przesuwa termin bez płatności.
 - Portfel z VAT: stawki, ceny i wartości netto oraz brutto w formularzu, kolumny netto
   i VAT na listach oraz zestawienie VAT w raporcie miesięcznym.
 - Kategorię produktu można wpisać z klawiatury, z przybliżonym wyszukiwaniem. Wejście na

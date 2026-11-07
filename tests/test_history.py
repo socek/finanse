@@ -258,3 +258,20 @@ def test_history_is_limited_and_says_so(db):
         add(db, wallet)
     text = history_text(db, max_rows=2)
     assert text.startswith("Pokazano 2 najnowszych zmian z 7.")
+
+
+def test_history_describes_schedule(db):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Bez terminu")
+    recurring = create_recurring(
+        db, wallet, "expense", "Czynsz", rows=[product("Czynsz", "1", "10")],
+        schedule={"unit": "month", "count": "1", "next_due_on": "2026-11-10"},
+    )  # fmt: skip
+    draft = payment_draft(db, recurring)
+    pay_recurring(db, recurring, "expense", "2026-11-12", "Czynsz", draft["rows"])
+    text = history_text(db)
+    plain = next(line for line in text.splitlines() if "„Bez terminu”" in line)
+    assert "termin:" not in plain and "okres:" not in plain
+    added = next(line for line in text.splitlines() if "Dodano transakcję cykliczną „Czynsz”" in line)
+    assert "termin: 2026-11-10, co ile: 1, okres: miesiące" in added
+    assert "termin: 2026-11-10 → 2026-12-10" in text

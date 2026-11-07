@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pytest
 from PySide6.QtCore import QDate, QEvent, Qt
 from PySide6.QtGui import QFocusEvent, QHelpEvent, QKeyEvent, QPalette
@@ -20,7 +22,7 @@ from finanse.gui.dialogs import (
 from finanse.gui.import_dialog import ImportDialog
 from finanse.gui.main_window import MainWindow
 from finanse.gui.products_tab import ProductsTab
-from finanse.gui.recurring_tab import AMOUNT, PAY, REMAINING, RecurringTab
+from finanse.gui.recurring_tab import AMOUNT, DUE, PAY, PERIOD, REMAINING, RecurringTab
 from finanse.gui.reports_tab import ReportsTab
 from finanse.gui.wallets_tab import WalletsTab
 from finanse.recurring import create_recurring, get_recurring
@@ -2406,3 +2408,86 @@ def test_recurring_tab_shows_amounts_and_deletes(db, errors):
 def test_new_recurring_requires_a_wallet(db, errors):
     RecurringTab(db).create()
     assert "Dodaj najpierw portfel" in errors[0]
+
+
+def _days_from_today(days):
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
+def test_recurring_dialog_saves_schedule(db, errors):
+    create_wallet(db, "A")
+    dialog = RecurringDialog(db)
+    assert dialog.period_unit.currentData() is None
+    assert not dialog.period_count.isEnabled() and not dialog.next_due_on.isEnabled()
+
+    dialog.description.setText("Czynsz")
+    dialog.period_unit.setCurrentIndex(dialog.period_unit.findData("month"))
+    assert dialog.period_count.isEnabled() and dialog.next_due_on.isEnabled()
+    assert dialog.period_unit.currentText() == "miesiąc"
+    dialog.period_count.setValue(3)
+    assert dialog.period_unit.currentText() == "miesiące"
+    dialog.next_due_on.setDate(QDate(2026, 12, 10))
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    saved = get_recurring(db, dialog.recurring_id)
+    assert (saved["period_unit"], saved["period_count"], saved["next_due_on"]) == (
+        "month", 3, "2026-12-10",
+    )  # fmt: skip
+
+    edit = RecurringDialog(db, dialog.recurring_id)
+    assert edit.period_unit.currentData() == "month"
+    assert edit.period_count.value() == 3
+    assert common.iso_date(edit.next_due_on) == "2026-12-10"
+    edit.period_unit.setCurrentIndex(0)
+    edit.accept()
+    assert get_recurring(db, dialog.recurring_id)["next_due_on"] is None
+
+
+def test_recurring_tab_shows_due_dates_and_skips(db, errors):
+    wallet = create_wallet(db, "A")
+    overdue = _days_from_today(-2)
+    create_recurring(db, wallet, "expense", "Bez terminu")
+    create_recurring(db, wallet, "expense", "Zaległa", rows=priced("Czynsz", "10"),
+                     schedule={"unit": "month", "count": 1, "next_due_on": overdue})
+    create_recurring(db, wallet, "expense", "Wkrótce",
+                     schedule={"unit": "week", "count": 2, "next_due_on": _days_from_today(3)})
+    tab = RecurringTab(db)
+    counts = []
+    tab.due_count_changed.connect(counts.append)
+
+    assert tab.table.item(0, DUE).text() == f"{overdue} (po terminie 2 dni)"
+    assert tab.table.item(0, DUE).font().bold()
+    assert tab.table.item(0, DUE).background().color() == common.overdue_background()
+    assert tab.table.item(0, DUE).foreground().color() == common.overdue_text()
+    assert tab.table.item(0, PERIOD).text() == "co miesiąc"
+    assert tab.table.item(1, DUE).text().endswith("(za 3 dni)")
+    assert tab.table.item(1, DUE).background().color() == common.warning_background()
+    assert tab.table.item(1, PERIOD).text() == "co 2 tygodnie"
+    assert tab.table.item(2, DUE).text() == "–"
+    assert tab.table.item(2, PERIOD).text() == "bez terminu"
+
+    tab.table.setCurrentCell(2, 0)
+    assert not tab.skip_button.isEnabled()
+    tab.table.setCurrentCell(0, 0)
+    assert tab.skip_button.isEnabled()
+    tab.skip()
+    assert counts == [0]
+    assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    descriptions = [tab.table.item(row, 0).text() for row in range(3)]
+    assert descriptions == ["Wkrótce", "Zaległa", "Bez terminu"]
+
+
+def test_tab_title_counts_due_payments(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+                     schedule={"unit": "month", "count": 1, "next_due_on": _days_from_today(0)})
+    create_recurring(db, wallet, "expense", "Prąd", rows=priced("Prąd", "10"),
+                     schedule={"unit": "month", "count": 1, "next_due_on": _days_from_today(5)})
+    window = MainWindow(db)
+    index = window.tabs.indexOf(window.recurring)
+    assert window.tabs.tabText(index) == "Cykliczne (1)"
+
+    _accept_on_exec(monkeypatch, PaymentDialog)
+    window.tabs.setCurrentIndex(index)
+    window.recurring.table.cellWidget(0, PAY).click()
+    assert window.tabs.tabText(index) == "Cykliczne"

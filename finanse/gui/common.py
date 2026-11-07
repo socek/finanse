@@ -98,6 +98,15 @@ def warning_text():
     return QColor("#2b1d00")
 
 
+def overdue_background():
+    """Tło tego, co wymaga działania, np. płatności po terminie; takie samo w obu motywach."""
+    return QColor("#c62828")
+
+
+def overdue_text():
+    return QColor("#ffffff")
+
+
 def mark_no_category(item, column):
     """Wyróżnia w wierszu listy brak kategorii, także obok innych kategorii."""
     if NO_CATEGORY_NAME in item.text(column).split(", "):
