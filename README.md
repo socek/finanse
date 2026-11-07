@@ -17,6 +17,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
 - raporty miesięczne z dowolnie wybranych portfeli jednej waluty: bilans, rozbicie na
   portfele, podział na kategorie i wykres z 12 miesięcy
+- miesięczne budżety kategorii, osobno dla każdej waluty, z paskiem wykorzystania
+  w raporcie
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami
 - historia zmian danych i automatyczna kopia bazy przy każdym uruchomieniu
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
@@ -104,6 +106,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `products` – pozycje transakcji: nazwa, kategoria, ilość, cena, wartość
 - `transfers` – przelewy między portfelami, z kwotą po każdej stronie
 - `recurring_transactions`, `recurring_products` – szablony transakcji cyklicznych
+- `budgets` – miesięczne limity wydatków kategorii w danej walucie
 - `operations`, `change_log` – dziennik zmian
 
 W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto
@@ -117,6 +120,11 @@ licząc od poprzedniego terminu, a nie od daty płatności. Termin miesięczny l
 wraca do pierwotnego dnia, np. 31 stycznia, 28 lutego, 31 marca. Zakładka pokazuje
 w nazwie liczbę płatności po terminie lub na dzisiaj, a na liście wyróżnia zaległe
 oraz te z terminem w ciągu 7 dni.
+
+Budżet to miesięczny limit wydatków w kategorii, ustawiany w zakładce **Kategorie**
+osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z wydatkami
+z portfeli wybranych w raporcie, bez przychodów i przelewów. Od 80% limitu pasek jest
+bursztynowy, a po przekroczeniu czerwony. Usunięcie kategorii usuwa też jej budżet.
 
 Kwota transakcji to suma wartości jej produktów. Saldo portfela to saldo początkowe
 plus przychody i przelewy przychodzące, minus wydatki i przelewy wychodzące.

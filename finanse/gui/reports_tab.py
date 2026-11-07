@@ -218,6 +218,14 @@ def _fit_height(table):
     )
 
 
+def _clear_grid(grid):
+    while grid.count():
+        widget = grid.takeAt(0).widget()
+        if widget:
+            widget.setParent(None)
+            widget.deleteLater()
+
+
 class ReportsTab(QWidget):
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -312,6 +320,13 @@ class ReportsTab(QWidget):
         self.vat_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.vat_balance = QLabel()
 
+        self.budgets_grid = QGridLayout()
+        self.budgets_empty = QLabel()
+        self.budgets_hint = QLabel(
+            "Budżety obejmują wydatki z portfeli wybranych w raporcie."
+            " Ustawisz je w zakładce Kategorie."
+        )
+
         self.expenses_grid = QGridLayout()
         self.expenses_empty = QLabel("Brak wydatków w tym miesiącu.")
         self.incomes_title = _section_title("Przychody według kategorii")
@@ -358,6 +373,11 @@ class ReportsTab(QWidget):
         body_layout.addWidget(self.vat_title)
         body_layout.addWidget(self.vat_table)
         body_layout.addWidget(self.vat_balance)
+        body_layout.addSpacing(12)
+        body_layout.addWidget(_section_title("Budżety"))
+        body_layout.addWidget(self.budgets_empty)
+        body_layout.addLayout(self.budgets_grid)
+        body_layout.addWidget(self.budgets_hint)
         body_layout.addSpacing(12)
         body_layout.addWidget(_section_title("Wydatki według kategorii"))
         body_layout.addWidget(self.expenses_empty)
@@ -479,6 +499,7 @@ class ReportsTab(QWidget):
         self.expense_label.setText(format_money(report["expense_total"], currency))
         self.net_label.setText(format_money(report["net_total"], currency))
 
+        self._fill_budgets(report)
         self.expenses_empty.setVisible(not report["expenses"])
         self._fill_bars(self.expenses_grid, report["expenses"], common.expense_series(), currency)
         self.incomes_title.setVisible(bool(report["incomes"]))
@@ -609,13 +630,53 @@ class ReportsTab(QWidget):
                 self.wallets_table.setItem(row, column, item)
         _fit_height(self.wallets_table)
 
+    def _fill_budgets(self, report):
+        currency = report["currency"]
+        budgets = report["budgets"]
+        _clear_grid(self.budgets_grid)
+        self.budgets_empty.setVisible(not budgets)
+        self.budgets_empty.setText(f"Nie masz budżetów w {currency}.")
+        self.budgets_grid.setColumnMinimumWidth(0, 140)
+        self.budgets_grid.setColumnStretch(1, 1)
+        self.budgets_grid.setColumnMinimumWidth(2, 190)
+        for index, budget in enumerate(budgets):
+            if budget["over"]:
+                color = common.overdue_background()
+                status = f"przekroczono o {format_money(-budget['left'], currency)}"
+            else:
+                color = (
+                    common.warning_background()
+                    if budget["nearly"]
+                    else common.positive_color()
+                )
+                status = f"zostało {format_money(budget['left'], currency)}"
+            usage = QLabel(
+                f"{format_money(budget['spent'], currency)} z "
+                f"{format_money(budget['limit'], currency)}  ({budget['percent']}%)"
+            )
+            usage.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            state = QLabel(status)
+            if budget["over"]:
+                font = QFont(state.font())
+                font.setBold(True)
+                state.setFont(font)
+                state.setStyleSheet(
+                    f"background: {common.overdue_background().name()};"
+                    f" color: {common.overdue_text().name()};"
+                    " padding: 1px 4px; border-radius: 3px;"
+                )
+            bar = ShareBar(min(budget["percent"], 100), color)
+            bar.setToolTip(f"{budget['name']} · {usage.text()} · {status}")
+            self.budgets_grid.addWidget(
+                common.plain_label(budget["name"]), index, 0, Qt.AlignmentFlag.AlignLeft
+            )
+            self.budgets_grid.addWidget(bar, index, 1)
+            self.budgets_grid.addWidget(usage, index, 2)
+            self.budgets_grid.addWidget(state, index, 3, Qt.AlignmentFlag.AlignLeft)
+
     @staticmethod
     def _fill_bars(grid, rows, color, currency):
-        while grid.count():
-            widget = grid.takeAt(0).widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
+        _clear_grid(grid)
         # Stałe szerokości wyrównują paski wydatków i przychodów względem siebie.
         grid.setColumnMinimumWidth(0, 140)
         grid.setColumnStretch(1, 1)

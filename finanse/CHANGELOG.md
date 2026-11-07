@@ -2,6 +2,9 @@
 
 ## 0.2 (w przygotowaniu)
 
+- Miesięczne budżety kategorii, ustawiane w zakładce Kategorie osobno dla każdej waluty.
+  Raport pokazuje, ile z limitu wydano i ile zostało, z wyróżnieniem budżetów bliskich
+  wyczerpania i przekroczonych.
 - Terminy transakcji cyklicznych: okres powtarzania i data następnej płatności, którą
   płatność przesuwa o jeden okres. Lista pokazuje zaległe i zbliżające się płatności,
   a nazwa zakładki liczbę płatności po terminie lub na dzisiaj. Przycisk Pomiń termin

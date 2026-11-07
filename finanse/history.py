@@ -16,6 +16,7 @@ NOUNS = {
     "transfers": "przelew",
     "recurring_transactions": "transakcję cykliczną",
     "recurring_products": "produkt transakcji cyklicznej",
+    "budgets": "budżet kategorii",
 }
 TITLE_FIELDS = {
     "wallets": "name",
@@ -25,7 +26,10 @@ TITLE_FIELDS = {
     "transfers": "description",
     "recurring_transactions": "description",
     "recurring_products": "name",
+    "budgets": "category_id",
 }
+# Tytuł z identyfikatora zamiast z tekstu, np. budżet nazywa się jak jego kategoria.
+TITLE_FORMATTERS = {"budgets": lambda value, names: names["categories"].get(value, f"nr {value}")}
 # Produkty usuwane i dodawane na nowo przy zapisie rachunku nie są prawdziwą zmianą.
 REPLACED_ON_SAVE = ("products", "recurring_products")
 
@@ -129,6 +133,11 @@ FIELDS = {
         ("period_unit", "okres", _period_unit, "brak"),
     ),
     "recurring_products": _PRODUCT_FIELDS,
+    "budgets": (
+        ("category_id", "kategoria", _category, "brak"),
+        ("currency", "waluta", _plain, "brak"),
+        ("amount_cents", "kwota", _money, "brak"),
+    ),
 }
 
 
@@ -177,7 +186,10 @@ def _describe(row, names):
     old = json.loads(row["old_values"]) if row["old_values"] else {}
     new = json.loads(row["new_values"]) if row["new_values"] else {}
     current = new or old
-    title = f"{ACTIONS[row['action']]} {NOUNS[table]} „{current[TITLE_FIELDS[table]]}”"
+    title_value = current[TITLE_FIELDS[table]]
+    if table in TITLE_FORMATTERS:
+        title_value = TITLE_FORMATTERS[table](title_value, names)
+    title = f"{ACTIONS[row['action']]} {NOUNS[table]} „{title_value}”"
     if row["action"] == "update":
         changes = [
             f"{field[1]}: {_value(field, old, names)} → {_value(field, new, names)}"

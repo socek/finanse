@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..budgets import budget_currencies, list_budgets, set_budgets
 from ..categories import list_categories
 from ..errors import ValidationError
 from ..money import (
@@ -738,6 +739,48 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
             self.recurring_id = create_recurring(self.db, *values)
         else:
             update_recurring(self.db, self.recurring_id, *values)
+
+
+class BudgetDialog(_SavingDialog):
+    """Miesięczne limity jednej kategorii, po jednym polu na walutę."""
+
+    def __init__(self, db, category_id, category_name, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.category_id = category_id
+        self.setWindowTitle(f"Budżet: {category_name}")
+        current = {
+            budget["currency"]: budget["amount_cents"]
+            for budget in list_budgets(db)
+            if budget["category_id"] == category_id
+        }
+        self.amounts = {}
+        form = QFormLayout()
+        for currency in budget_currencies(db):
+            field = QLineEdit(
+                format_money_input(current[currency]) if currency in current else ""
+            )
+            field.setPlaceholderText("puste: bez budżetu")
+            field.textEdited.connect(lambda _text, f=field: _remove_minus(f))
+            self.amounts[currency] = field
+            form.addRow(f"Miesięcznie w {currency}", field)
+        hint = common.plain_label(
+            "Limit wydatków w tej kategorii w każdym miesiącu. Raport porównuje go"
+            " z wydatkami z wybranych w nim portfeli."
+        )
+        hint.setWordWrap(True)
+        layout = QVBoxLayout(self)
+        layout.addWidget(hint)
+        layout.addLayout(form)
+        layout.addWidget(_buttons(self, "Zapisz", "save"))
+        self.resize(420, self.sizeHint().height())
+
+    def save(self):
+        set_budgets(
+            self.db,
+            self.category_id,
+            {currency: field.text() for currency, field in self.amounts.items()},
+        )
 
 
 class TransferDialog(_SavingDialog):

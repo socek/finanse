@@ -3,6 +3,7 @@ import re
 from collections import Counter
 from datetime import date
 
+from .budgets import budget_usage
 from .money import NBSP, format_money
 from .transactions import VAT_RATES
 from .wallets import VAT, list_wallets
@@ -260,6 +261,51 @@ def _vat_report(db, wallets, year, month):
     }
 
 
+def _budgets(db, wallet_ids, year, month, currency):
+    """Budżety waluty raportu z wydatkami wybranych portfeli w tym miesiącu."""
+    budgets = db.execute(
+        """
+        SELECT b.category_id, c.name, b.amount_cents
+        FROM budgets b
+        JOIN categories c ON c.id = b.category_id
+        WHERE b.currency = ?
+        ORDER BY c.name
+        """,
+        (currency,),
+    ).fetchall()
+    if not budgets:
+        return []
+    end_year, end_month = _shift_month(year, month, 1)
+    marks = ",".join("?" * len(wallet_ids))
+    spent = {
+        row["category_id"]: row["total"]
+        for row in db.execute(
+            f"""
+            SELECT p.category_id, SUM(p.total_cents) AS total
+            FROM products p
+            JOIN transactions t ON t.id = p.transaction_id
+            WHERE t.wallet_id IN ({marks}) AND t.kind = 'expense'
+              AND t.occurred_on >= ? AND t.occurred_on < ?
+              AND p.category_id IS NOT NULL
+            GROUP BY p.category_id
+            """,
+            (
+                *wallet_ids,
+                f"{_month_key(year, month)}-01",
+                f"{_month_key(end_year, end_month)}-01",
+            ),
+        )
+    }
+    return [
+        {
+            "category_id": budget["category_id"],
+            "name": budget["name"],
+            **budget_usage(spent.get(budget["category_id"], 0), budget["amount_cents"]),
+        }
+        for budget in budgets
+    ]
+
+
 def build_report(db, currency="", wallet_ids=None, month=""):
     """Raport miesięczny z wybranych portfeli jednej waluty.
 
@@ -294,4 +340,5 @@ def build_report(db, currency="", wallet_ids=None, month=""):
         "net_total": income_total - expense_total,
         "trend": _trend(db, ids, year, month_number, currency),
         "vat": _vat_report(db, selected, year, month_number),
+        "budgets": _budgets(db, ids, year, month_number, currency),
     }
