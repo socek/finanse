@@ -240,6 +240,8 @@ class MainWindow(QMainWindow):
                    "pay_selected", self._can_pay)  # fmt: skip
         self._item(transaction_menu, "Pomiń termin transakcji cyklicznej", self.recurring.skip,
                    enabled=self._can_skip)  # fmt: skip
+        self._item(transaction_menu, "Zawieś lub wznów transakcję cykliczną",
+                   self.recurring.toggle_suspended, enabled=self._can_suspend)  # fmt: skip
         transaction_menu.addSeparator()
         self._item(transaction_menu, "Historia ceny produktu…",
                    self.products.show_price_history, enabled=self._has_product)  # fmt: skip
@@ -326,6 +328,12 @@ class MainWindow(QMainWindow):
         return (
             self.tabs.currentWidget() is self.recurring
             and self.recurring.skip_button.isEnabled()
+        )
+
+    def _can_suspend(self):
+        return (
+            self.tabs.currentWidget() is self.recurring
+            and self.recurring.suspend_button.isEnabled()
         )
 
     # Działania

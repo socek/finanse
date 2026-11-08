@@ -1,5 +1,14 @@
 # Historia zmian
 
+## 0.3 (w przygotowaniu)
+
+- Suma pod listą w zakładkach Cykliczne (wydatki i przychody) oraz Kategorie (budżety),
+  osobno dla każdej waluty.
+- Zawieszanie transakcji cyklicznych przyciskiem Zawieś/Wznów. Zawieszona zostaje na liście
+  z wyszarzonym opisem i terminem, ale nie liczy się do sumy, prognozy salda ani liczby płatności
+  po terminie.
+- Menu pod prawym przyciskiem myszy na wierszach w zakładkach Cykliczne oraz Kategorie i tagi.
+
 ## 0.2 (2026-11-07)
 
 - Przywracanie kopii bazy z okna Kopie i pliki danych albo z dowolnego pliku, bez zamykania

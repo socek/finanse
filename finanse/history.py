@@ -149,6 +149,7 @@ FIELDS = {
         ("next_due_on", "termin", _plain, "bez terminu"),
         ("period_count", "co ile", _plain, "brak"),
         ("period_unit", "okres", _period_unit, "brak"),
+        ("suspended", "zawieszona", lambda value, _names: "tak" if value else "nie", "nie"),
     ),
     "recurring_products": _PRODUCT_FIELDS,
     "import_rules": (
@@ -206,6 +207,8 @@ def _is_plain_default(field, values):
         return values.get("vat_rate") is None
     if field[0] in ("next_due_on", "period_count", "period_unit"):
         return values.get("period_unit") is None
+    if field[0] == "suspended":
+        return not values.get("suspended")
     return field[0] == "wallet_type" and values.get("wallet_type") == "plain"
 
 

@@ -158,7 +158,8 @@ miesięcy lub lat. Płatność i przycisk **Pomiń termin** przesuwają termin o
 licząc od poprzedniego terminu, a nie od daty płatności. Termin miesięczny lub roczny
 wraca do pierwotnego dnia, np. 31 stycznia, 28 lutego, 31 marca. Zakładka pokazuje
 w nazwie liczbę płatności po terminie lub na dzisiaj, a na liście wyróżnia zaległe
-oraz te z terminem w ciągu 7 dni.
+oraz te z terminem w ciągu 7 dni. Przycisk **Zawieś** wyłącza transakcję z sumy, prognozy
+i liczby płatności po terminie, a jej opis i termin są wyszarzone, a termin stoi do czasu **Wznów**.
 
 Raport obejmuje miesiąc, rok albo zakres dat z oboma końcami. Wykres pokazuje 12 miesięcy
 do wybranego miesiąca, miesiące wybranego roku, a dla zakresu jego miesiące albo, przy

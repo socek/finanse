@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -21,7 +22,7 @@ from ..categories import (
     rename_category,
 )
 from ..errors import ValidationError
-from ..money import format_money
+from ..money import format_money, format_totals
 from . import common, shortcuts
 from .dialogs import BudgetDialog
 from .tags_panel import TagsPanel
@@ -62,6 +63,7 @@ class CategoriesTab(QWidget):
             lambda item: self.edit_budget() if item.column() == BUDGET else self.rename()
         )
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        common.attach_row_menu(self.table, self._row_menu)
         self.delete_shortcut = shortcuts.bind(
             "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
         )
@@ -75,7 +77,9 @@ class CategoriesTab(QWidget):
         self.budget_button = QPushButton("Budżet")
         self.budget_button.setToolTip("Miesięczny limit wydatków w zaznaczonej kategorii.")
         self.budget_button.clicked.connect(self.edit_budget)
+        self.summary = QLabel()
         actions = QHBoxLayout()
+        actions.addWidget(self.summary)
         actions.addStretch()
         actions.addWidget(self.budget_button)
         actions.addWidget(self.rename_button)
@@ -98,10 +102,16 @@ class CategoriesTab(QWidget):
     def refresh(self):
         categories = list_categories(self.db)
         budgets = {}
+        totals = {}
         for budget in list_budgets(self.db):
             budgets.setdefault(budget["category_id"], []).append(
                 format_money(budget["amount_cents"], budget["currency"])
             )
+            totals[budget["currency"]] = (
+                totals.get(budget["currency"], 0) + budget["amount_cents"]
+            )
+        self.summary.setText(f"Suma budżetów: {format_totals(totals)}")
+        self.summary.setVisible(bool(totals))
         self.table.setRowCount(len(categories))
         for row, category in enumerate(categories):
             name = QTableWidgetItem(category["name"])
@@ -142,6 +152,15 @@ class CategoriesTab(QWidget):
         reason = self._block_reason(row) if selected else "Zaznacz kategorię."
         self.delete_button.setEnabled(not reason)
         self.delete_button.setToolTip(shortcuts.tooltip("delete_selected", reason))
+
+    def _row_menu(self):
+        """Menu zaznaczonej kategorii; niepustej nie da się usunąć."""
+        menu = QMenu(self)
+        menu.addAction("Budżet", self.edit_budget)
+        menu.addAction("Zmień nazwę", self.rename)
+        if not self._block_reason(self.table.currentRow()):
+            menu.addAction("Usuń", self.delete)
+        return menu
 
     def add(self):
         try:

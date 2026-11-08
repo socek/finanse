@@ -8,7 +8,7 @@ from finanse.forecast import balance_forecast, end_of_month, scheduled_payments
 from finanse.gui import common
 from finanse.gui.forecast_dialog import ForecastDialog
 from finanse.gui.wallets_tab import WalletsTab
-from finanse.recurring import create_recurring
+from finanse.recurring import create_recurring, set_suspended
 from finanse.transactions import create_transaction
 from finanse.transfers import create_transfer
 from finanse.wallets import create_wallet
@@ -140,3 +140,14 @@ def test_wallets_tab_shows_forecast_of_checked_wallets(db, errors, monkeypatch):
 
     tab.wallet_list.set_all_checked(False)
     assert not tab.forecast.isVisibleTo(tab)
+
+
+def test_suspended_recurring_is_left_out_of_forecast(db):
+    wallet = create_wallet(db, "A", initial_balance="100")
+    held = create_recurring(
+        db, wallet, "expense", "Siłownia", rows=priced("Karnet", "30"), schedule=schedule("2026-11-15")
+    )
+    until = date(2026, 11, 30)
+    assert len(scheduled_payments(db, until, TODAY)) == 1
+    set_suspended(db, held, True)
+    assert scheduled_payments(db, until, TODAY) == []

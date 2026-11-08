@@ -9,7 +9,7 @@ from helpers import priced
 from finanse.categories import create_category, rename_category
 from finanse.db import connect, init_db
 from finanse.history import history_text
-from finanse.recurring import create_recurring, pay_recurring, payment_draft
+from finanse.recurring import create_recurring, pay_recurring, payment_draft, set_suspended
 from finanse.transactions import (
     create_transaction,
     delete_transaction,
@@ -275,3 +275,11 @@ def test_history_describes_schedule(db):
     added = next(line for line in text.splitlines() if "Dodano transakcję cykliczną „Czynsz”" in line)
     assert "termin: 2026-11-10, co ile: 1, okres: miesiące" in added
     assert "termin: 2026-11-10 → 2026-12-10" in text
+
+
+def test_history_describes_suspending(db):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Siłownia")
+    assert "zawieszona" not in history_text(db)
+    set_suspended(db, recurring, True)
+    assert "zawieszona: nie → tak" in history_text(db)

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..money import format_money
+from ..money import format_money, format_totals
 from ..errors import ValidationError
 from ..recurring import (
     DUE_SOON_DAYS,
@@ -22,6 +23,8 @@ from ..recurring import (
     due_text,
     list_recurring,
     period_text,
+    recurring_totals,
+    set_suspended,
     skip_due,
 )
 from ..wallets import get_wallet, list_wallets
@@ -34,6 +37,7 @@ RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 ) = range(10)  # fmt: skip
 OVERDUE_HINT = "Termin płatności minął."
 DUE_SOON_HINT = f"Termin płatności przypada w ciągu {DUE_SOON_DAYS} dni."
+SUSPENDED_HINT = "Zawieszona: nie liczy się do sum, prognozy ani płatności po terminie."
 
 
 class RecurringTab(QWidget):
@@ -44,6 +48,7 @@ class RecurringTab(QWidget):
         super().__init__(parent)
         self.db = db
         self.skippable = set()
+        self.suspended = set()
 
         new_button = QPushButton("Nowa transakcja cykliczna")
         shortcuts.show_on(new_button, "new_recurring")
@@ -83,6 +88,7 @@ class RecurringTab(QWidget):
             )
         self.table.itemDoubleClicked.connect(lambda *_: self.edit())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        common.attach_row_menu(self.table, self._row_menu)
         self.delete_shortcut = shortcuts.bind(
             "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
         )
@@ -92,14 +98,26 @@ class RecurringTab(QWidget):
             "Przesuwa termin zaznaczonej transakcji o jeden okres bez płatności."
         )
         self.skip_button.clicked.connect(self.skip)
+        self.suspend_button = QPushButton("Zawieś")
+        self.suspend_button.setToolTip(
+            "Zawieszona transakcja zostaje na liście, ale nie liczy się do sum ani prognozy."
+        )
+        self.suspend_button.clicked.connect(self.toggle_suspended)
         self.edit_button = QPushButton("Edytuj")
         shortcuts.show_on(self.edit_button, "edit_selected")
         self.edit_button.clicked.connect(self.edit)
         self.delete_button = QPushButton("Usuń")
         shortcuts.show_on(self.delete_button, "delete_selected")
         self.delete_button.clicked.connect(self.delete)
+        self.summary = QLabel()
+        self.summary.setToolTip(
+            "Suma kwot z listy, bez przeliczania okresów powtarzania. Pomija transakcje "
+            "zakończone, zawieszone i te z kwotą ustalaną przy płatności."
+        )
         actions = QHBoxLayout()
+        actions.addWidget(self.summary)
         actions.addStretch()
+        actions.addWidget(self.suspend_button)
         actions.addWidget(self.skip_button)
         actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
@@ -117,6 +135,7 @@ class RecurringTab(QWidget):
         self.skippable = {
             item["id"] for item in items if days_until_due(item) is not None
         }
+        self.suspended = {item["id"] for item in items if item["suspended"]}
         self.table.setRowCount(len(items))
         for row, item in enumerate(items):
             self._fill_row(row, item)
@@ -125,8 +144,19 @@ class RecurringTab(QWidget):
         if selected not in {item["id"] for item in items}:
             self.table.setCurrentCell(-1, -1)
         self.empty.setVisible(not items)
+        self._update_summary(items)
         self._update_buttons()
         self.due_count_changed.emit(count_due(self.db))
+
+    def _update_summary(self, items):
+        totals = recurring_totals(items)
+        parts = []
+        if totals["expense"]:
+            parts.append(f"Suma wydatków: {format_totals(totals['expense'], '−')}")
+        if totals["income"]:
+            parts.append(f"Suma przychodów: {format_totals(totals['income'], '+')}")
+        self.summary.setText("   |   ".join(parts))
+        self.summary.setVisible(bool(parts))
 
     def _fill_row(self, row, item):
         income = item["kind"] == "income"
@@ -166,6 +196,10 @@ class RecurringTab(QWidget):
         if categories == common.NO_CATEGORY_NAME:
             common.mark_no_category_cell(self.table.item(row, CATEGORY))
         self._mark_due(self.table.item(row, DUE), days_until_due(item))
+        if item["suspended"]:
+            for column in (DESCRIPTION, DUE):
+                self.table.item(row, column).setForeground(common.muted_text())
+                self.table.item(row, column).setToolTip(SUSPENDED_HINT)
         if item["total_cents"] is not None:
             self.table.item(row, AMOUNT).setForeground(
                 common.positive_color() if income else common.negative_color()
@@ -178,6 +212,8 @@ class RecurringTab(QWidget):
 
     @staticmethod
     def _due_cell_text(item):
+        if item["suspended"]:
+            return f"{item['next_due_on'] or ''} (zawieszona)".strip()
         if item["next_due_on"] is None:
             return "–"
         days = days_until_due(item)
@@ -213,6 +249,23 @@ class RecurringTab(QWidget):
         self.edit_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
         self.skip_button.setEnabled(selected_id in self.skippable)
+        self.suspend_button.setEnabled(selected)
+        self.suspend_button.setText("Wznów" if selected_id in self.suspended else "Zawieś")
+
+    def _row_menu(self):
+        """Menu zaznaczonej transakcji, tylko z działaniami możliwymi w jej stanie."""
+        recurring_id = self.selected_id()
+        menu = QMenu(self)
+        if self.table.cellWidget(self.table.currentRow(), PAY).isEnabled():
+            menu.addAction("Zapłać", self.pay_selected)
+        if recurring_id in self.skippable:
+            menu.addAction("Pomiń termin", self.skip)
+        menu.addAction(
+            "Wznów" if recurring_id in self.suspended else "Zawieś", self.toggle_suspended
+        )
+        menu.addAction("Edytuj", self.edit)
+        menu.addAction("Usuń", self.delete)
+        return menu
 
     def edit_selected(self):
         self.edit()
@@ -248,6 +301,13 @@ class RecurringTab(QWidget):
         ):
             delete_recurring(self.db, recurring_id)
             self.refresh()
+
+    def toggle_suspended(self):
+        recurring_id = self.selected_id()
+        if recurring_id is None:
+            return
+        set_suspended(self.db, recurring_id, recurring_id not in self.suspended)
+        self.refresh()
 
     def skip(self):
         recurring_id = self.selected_id()

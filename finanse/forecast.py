@@ -32,6 +32,7 @@ def scheduled_payments(db, until, today=None):
         JOIN wallets w ON w.id = r.wallet_id
         WHERE r.next_due_on IS NOT NULL AND r.next_due_on <= ?
           AND (r.remaining IS NULL OR r.remaining > 0)
+          AND NOT r.suspended
         """,
         (until.isoformat(),),
     ).fetchall()

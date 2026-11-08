@@ -2,14 +2,15 @@ import sqlite3
 from datetime import date, timedelta
 
 import pytest
-from PySide6.QtCore import QDate, QEvent, Qt
+from PySide6.QtCore import QDate, QEvent, QPoint, Qt
 from PySide6.QtGui import QFocusEvent, QHelpEvent, QKeyEvent, QPalette
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QToolTip
+from PySide6.QtWidgets import QApplication, QDialog, QMenu, QToolTip
 from helpers import priced
 from test_csv_import import BANK_CSV
 
 from finanse import __version__
+from finanse.budgets import set_budgets
 from finanse.categories import create_category
 from finanse.gui import common
 from finanse.gui.categories_tab import CategoriesTab
@@ -23,10 +24,19 @@ from finanse.gui.dialogs import (
 from finanse.gui.import_dialog import ImportDialog
 from finanse.gui.main_window import MainWindow
 from finanse.gui.products_tab import ProductsTab
-from finanse.gui.recurring_tab import AMOUNT, DUE, PAY, PERIOD, REMAINING, RecurringTab
+from finanse.gui.recurring_tab import (
+    AMOUNT,
+    DESCRIPTION,
+    DUE,
+    PAY,
+    PERIOD,
+    REMAINING,
+    RecurringTab,
+)
 from finanse.gui.reports_tab import ReportsTab
 from finanse.gui.wallets_tab import WalletsTab
-from finanse.recurring import create_recurring, get_recurring
+from finanse.recurring import create_recurring, get_recurring, list_recurring, set_suspended
+from finanse.tags import list_tags, set_transaction_tags
 from finanse.transactions import create_transaction, get_transaction
 from finanse.transfers import create_transfer
 from finanse.wallets import create_wallet, get_wallet, list_wallets
@@ -1069,6 +1079,41 @@ def test_categories_tab(db, errors):
     assert tab.delete_button.isEnabled()
     tab.delete()
     assert tab.table.rowCount() == 9
+
+
+def test_categories_tab_shows_budget_sum_per_currency(db, errors):
+    assert CategoriesTab(db).summary.isHidden()
+    create_wallet(db, "A")
+    create_wallet(db, "B", currency="EUR")
+    dom = db.execute("SELECT id FROM categories WHERE name = 'Dom'").fetchone()[0]
+    other = create_category(db, "Psy")
+    set_budgets(db, dom, {"PLN": "1000", "EUR": "50"})
+    set_budgets(db, other, {"PLN": "200,50", "EUR": ""})
+    tab = CategoriesTab(db)
+    assert not tab.summary.isHidden()
+    assert tab.summary.text() == (
+        "Suma budżetów: 50,00\xa0EUR, 1\xa0200,50\xa0PLN"
+    )
+
+
+def test_recurring_tab_sums_kinds_and_skips_unpriced_and_finished(db, errors):
+    wallet = create_wallet(db, "A")
+    euro = create_wallet(db, "B", currency="EUR")
+    assert RecurringTab(db).summary.isHidden()
+    create_recurring(db, wallet, "expense", "Bez kwoty")
+    create_recurring(db, wallet, "expense", "Koniec", remaining="0", rows=priced("K", "99"))
+    assert RecurringTab(db).summary.isHidden()
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1000"))
+    create_recurring(db, wallet, "expense", "Prąd", rows=priced("Prąd", "200,50"))
+    create_recurring(db, euro, "expense", "Hosting", rows=priced("Hosting", "5"))
+    tab = RecurringTab(db)
+    assert tab.summary.text() == "Suma wydatków: −5,00\xa0EUR, −1\xa0200,50\xa0PLN"
+    create_recurring(db, wallet, "income", "Pensja", rows=priced("Pensja", "3000"))
+    tab.refresh()
+    assert tab.summary.text() == (
+        "Suma wydatków: −5,00\xa0EUR, −1\xa0200,50\xa0PLN"
+        "   |   Suma przychodów: +3\xa0000,00\xa0PLN"
+    )
 
 
 def test_reports_tab_shows_month_and_navigates(db, errors):
@@ -2588,3 +2633,134 @@ def test_year_bar_opens_year_report(db, errors):
     tab.chart.monthClicked.emit("2024")
     assert (tab.report["period"], tab.month_title.text()) == ("year", "rok 2024")
     assert tab.trend_table.horizontalHeaderItem(0).text() == "Miesiąc"
+
+
+def test_suspending_greys_due_date_and_leaves_the_sum(db, errors):
+    wallet = create_wallet(db, "A")
+    due = _days_from_today(-2)
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+                     schedule={"unit": "month", "count": 1, "next_due_on": due})
+    create_recurring(db, wallet, "expense", "Bez terminu", rows=priced("Woda", "5"))
+    tab = RecurringTab(db)
+    counts = []
+    tab.due_count_changed.connect(counts.append)
+    assert not tab.suspend_button.isEnabled()
+
+    tab.table.setCurrentCell(0, 0)
+    assert tab.suspend_button.text() == "Zawieś" and tab.skip_button.isEnabled()
+    tab.suspend_button.click()
+    assert counts == [0]
+    row = next(r for r in range(2) if tab.table.item(r, 0).text() == "Czynsz")
+    cell = tab.table.item(row, DUE)
+    assert cell.text() == f"{due} (zawieszona)"
+    assert cell.foreground().color() == common.muted_text()
+    assert cell.background().color() != common.overdue_background()
+    assert tab.table.item(row, DESCRIPTION).foreground().color() == common.muted_text()
+    assert tab.summary.text() == "Suma wydatków: −5,00\xa0PLN"
+    assert tab.suspend_button.text() == "Wznów" and not tab.skip_button.isEnabled()
+
+    tab.suspend_button.click()
+    row = next(r for r in range(2) if tab.table.item(r, 0).text() == "Czynsz")
+    assert tab.table.item(row, DUE).text() == f"{due} (po terminie 2 dni)"
+    assert tab.table.item(row, DESCRIPTION).foreground().color() != common.muted_text()
+    assert tab.summary.text() == "Suma wydatków: −15,00\xa0PLN"
+    assert counts == [0, 1]
+
+
+def test_suspended_without_due_date_says_so(db, errors):
+    wallet = create_wallet(db, "A")
+    recurring = create_recurring(db, wallet, "expense", "Bez terminu")
+    set_suspended(db, recurring, True)
+    tab = RecurringTab(db)
+    assert tab.table.item(0, DUE).text() == "(zawieszona)"
+
+
+def _record_menus(monkeypatch, module):
+    """Zamiast blokującego menu zbiera jego pozycje; PySide wymaga do tego podklasy."""
+    shown = []
+
+    class RecordingMenu(QMenu):
+        def exec(self, *_args):
+            shown[:] = [action.text() for action in self.actions()]
+
+    monkeypatch.setattr(f"finanse.gui.{module}.QMenu", RecordingMenu)
+    return shown
+
+
+def _right_click(table, column=0):
+    """Klika prawym przyciskiem w pierwszy wiersz."""
+    table.customContextMenuRequested.emit(table.visualRect(table.model().index(0, column)).center())
+
+
+def _choose(tab, text):
+    next(a for a in tab._row_menu().actions() if a.text() == text).trigger()
+
+
+def test_recurring_row_menu_follows_the_state(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    due = _days_from_today(10)
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"),
+                     schedule={"unit": "month", "count": 1, "next_due_on": due})
+    tab = RecurringTab(db)
+    shown = _record_menus(monkeypatch, "recurring_tab")
+
+    # Kolumna z przyciskiem Zapłać nie ma elementu tabeli, a menu też ma tam działać.
+    _right_click(tab.table, PAY)
+    assert shown == ["Zapłać", "Pomiń termin", "Zawieś", "Edytuj", "Usuń"]
+    assert tab.selected_id() is not None
+
+    _choose(tab, "Zawieś")
+    _right_click(tab.table)
+    assert shown == ["Zapłać", "Wznów", "Edytuj", "Usuń"]
+    _choose(tab, "Wznów")
+    assert not list_recurring(db)[0]["suspended"]
+    _choose(tab, "Usuń")
+    assert list_recurring(db) == []
+
+
+def test_finished_recurring_menu_has_no_payment(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Koniec", remaining="0", rows=priced("K", "9"))
+    tab = RecurringTab(db)
+    shown = _record_menus(monkeypatch, "recurring_tab")
+    _right_click(tab.table)
+    assert shown == ["Zawieś", "Edytuj", "Usuń"]
+
+
+def test_row_menu_needs_a_row(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"))
+    tab = RecurringTab(db)
+    shown = _record_menus(monkeypatch, "recurring_tab")
+    tab.table.customContextMenuRequested.emit(QPoint(1, 5000))
+    assert shown == []
+    _right_click(tab.table)
+    assert shown  # ta sama atrapa łapie menu, gdy wiersz istnieje
+
+
+def test_category_row_menu_offers_delete_only_when_empty(db, errors, monkeypatch):
+    create_category(db, "Pusta")
+    wallet = create_wallet(db, "A")
+    home = create_category(db, "Mieszkanie")
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10", home))
+    tab = CategoriesTab(db)
+    row_of = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
+
+    tab.table.setCurrentCell(row_of["Mieszkanie"], 0)
+    assert [a.text() for a in tab._row_menu().actions()] == ["Budżet", "Zmień nazwę"]
+    tab.table.setCurrentCell(row_of["Pusta"], 0)
+    assert [a.text() for a in tab._row_menu().actions()] == ["Budżet", "Zmień nazwę", "Usuń"]
+    _choose(tab, "Usuń")
+    assert "Pusta" not in [tab.table.item(r, 0).text() for r in range(tab.table.rowCount())]
+
+
+def test_tag_row_menu(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    set_transaction_tags(db, add(db, wallet), ["Wakacje"])
+    tab = CategoriesTab(db)
+    panel = tab.tags
+    shown = _record_menus(monkeypatch, "tags_panel")
+    _right_click(panel.table)
+    assert shown == ["Zmień nazwę", "Usuń"]
+    _choose(panel, "Usuń")
+    assert list_tags(db) == []

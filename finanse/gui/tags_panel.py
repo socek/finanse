@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -43,6 +44,7 @@ class TagsPanel(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self.rename())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        common.attach_row_menu(self.table, self._row_menu)
         self.delete_shortcut = shortcuts.bind(
             "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
         )
@@ -92,6 +94,12 @@ class TagsPanel(QWidget):
         selected = self.table.currentRow() >= 0
         self.rename_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
+
+    def _row_menu(self):
+        menu = QMenu(self)
+        menu.addAction("Zmień nazwę", self.rename)
+        menu.addAction("Usuń", self.delete)
+        return menu
 
     def rename(self):
         tag_id, current, _count = self._selected()

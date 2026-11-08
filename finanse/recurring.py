@@ -63,8 +63,8 @@ def advance_due(due_on, unit, count, due_day):
 
 
 def days_until_due(item, today=None):
-    """Dni do terminu, ujemne po terminie; None bez terminu albo po ostatniej płatności."""
-    if item["next_due_on"] is None or item["remaining"] == 0:
+    """Dni do terminu, ujemne po terminie; None bez terminu, po ostatniej płatności i w zawieszeniu."""
+    if item["next_due_on"] is None or item["remaining"] == 0 or item["suspended"]:
         return None
     today = today or date.today()
     return (date.fromisoformat(item["next_due_on"]) - today).days
@@ -90,6 +90,7 @@ def count_due(db, today=None):
         SELECT COUNT(*) FROM recurring_transactions
         WHERE next_due_on IS NOT NULL AND next_due_on <= ?
           AND (remaining IS NULL OR remaining > 0)
+          AND NOT suspended
         """,
         (today.isoformat(),),
     ).fetchone()[0]
@@ -111,11 +112,24 @@ def list_recurring(db):
         JOIN wallets w ON w.id = r.wallet_id
         LEFT JOIN recurring_products p ON p.recurring_id = r.id
         GROUP BY r.id
-        ORDER BY r.remaining IS NOT NULL AND r.remaining = 0,
+        ORDER BY r.remaining IS NOT NULL AND r.remaining = 0, r.suspended,
                  r.next_due_on IS NULL, r.next_due_on,
                  w.name, r.description, r.id
         """
     ).fetchall()
+
+
+def recurring_totals(items):
+    """Sumy kwot wg rodzaju i waluty; bez zakończonych, zawieszonych i bez ustalonej kwoty."""
+    totals = {"expense": {}, "income": {}}
+    for item in items:
+        if item["total_cents"] is None or item["remaining"] == 0 or item["suspended"]:
+            continue
+        by_currency = totals[item["kind"]]
+        by_currency[item["currency"]] = (
+            by_currency.get(item["currency"], 0) + item["total_cents"]
+        )
+    return totals
 
 
 def get_recurring(db, recurring_id):
@@ -290,6 +304,15 @@ def delete_recurring(db, recurring_id):
         db.execute("DELETE FROM recurring_transactions WHERE id = ?", (recurring_id,))
 
 
+def set_suspended(db, recurring_id, suspended):
+    """Zawiesza albo wznawia transakcję; termin zostaje taki, jaki był."""
+    with db:
+        db.execute(
+            "UPDATE recurring_transactions SET suspended = ? WHERE id = ?",
+            (int(suspended), recurring_id),
+        )
+
+
 def _advanced_due(recurring):
     if recurring["next_due_on"] is None:
         return None
@@ -310,6 +333,8 @@ def skip_due(db, recurring_id):
         raise ValidationError("Ta transakcja cykliczna już nie istnieje.")
     if recurring["next_due_on"] is None:
         raise ValidationError("Ta transakcja cykliczna nie ma terminu.")
+    if recurring["suspended"]:
+        raise ValidationError("Ta transakcja cykliczna jest zawieszona.")
     if recurring["remaining"] == 0:
         raise ValidationError("Licznik tej transakcji cyklicznej doszedł już do zera.")
     with db:

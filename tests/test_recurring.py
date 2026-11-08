@@ -17,6 +17,8 @@ from finanse.recurring import (
     pay_recurring,
     payment_draft,
     period_text,
+    recurring_totals,
+    set_suspended,
     skip_due,
     update_recurring,
 )
@@ -357,3 +359,36 @@ def test_due_days_count_and_list_order(db):
     ]  # fmt: skip
     assert [days_until_due(item, today) for item in items] == [-9, 0, 10, None, None]
     assert count_due(db, today) == 2
+
+
+def test_suspended_is_not_due_summed_or_skippable_until_resumed(db):
+    wallet = create_wallet(db, "A")
+    today = date(2026, 11, 10)
+    active = create_recurring(
+        db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10"), schedule=monthly("2026-11-20")
+    )
+    held = create_recurring(
+        db, wallet, "expense", "Siłownia", rows=priced("Karnet", "99"), schedule=monthly("2026-11-01")
+    )
+    assert count_due(db, today) == 1
+    set_suspended(db, held, True)
+
+    items = list_recurring(db)
+    assert [item["description"] for item in items] == ["Czynsz", "Siłownia"]
+    assert days_until_due(items[1], today) is None
+    assert count_due(db, today) == 0
+    assert recurring_totals(items)["expense"] == {"PLN": 1000}
+    with pytest.raises(ValidationError):
+        skip_due(db, held)
+
+    # Edycja nie wznawia, a termin czeka niezmieniony.
+    update_recurring(
+        db, held, wallet, "expense", "Karnet", rows=priced("Karnet", "99"),
+        schedule=monthly("2026-11-01"),
+    )  # fmt: skip
+    assert get_recurring(db, held)["suspended"] == 1
+    set_suspended(db, held, False)
+    assert get_recurring(db, held)["next_due_on"] == "2026-11-01"
+    assert count_due(db, today) == 1
+    assert recurring_totals(list_recurring(db))["expense"] == {"PLN": 10900}
+    assert get_recurring(db, active)["suspended"] == 0

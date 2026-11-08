@@ -18,6 +18,21 @@ def _message_box(parent, icon, text):
     return box
 
 
+def attach_row_menu(table, build_menu):
+    """Prawy przycisk zaznacza wiersz tabeli i pokazuje menu z build_menu."""
+
+    def show(position):
+        # rowAt, bo komórki z przyciskiem nie mają elementu, który znalazłoby itemAt.
+        row = table.rowAt(position.y())
+        if row < 0:
+            return
+        table.setCurrentCell(row, 0)
+        build_menu().exec(table.viewport().mapToGlobal(position))
+
+    table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    table.customContextMenuRequested.connect(show)
+
+
 def show_errors(parent, errors):
     box = _message_box(parent, QMessageBox.Icon.Warning, "\n".join(errors))
     box.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
@@ -105,6 +120,11 @@ def overdue_background():
 
 def overdue_text():
     return QColor("#ffffff")
+
+
+def muted_text():
+    """Tekst tego, co chwilowo nie obowiązuje, np. terminu zawieszonej płatności."""
+    return _themed("muted", "#8c8c8c", "#7f7f7f")
 
 
 def mark_no_category(item, column):
