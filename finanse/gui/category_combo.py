@@ -79,6 +79,14 @@ class CategoryCombo(QComboBox):
         self.results.show()
         self.results.raise_()
 
+    def keyPressEvent(self, event):
+        """Fokus ma pole wyboru (pole tekstowe przekazuje mu fokus), więc klawisze
+        trafiają najpierw tutaj, a nie przez filtr pola tekstowego."""
+        if self._handle_key(event):
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def eventFilter(self, watched, event):
         if watched is self.lineEdit() and event.type() == QEvent.Type.KeyPress:
             if self._handle_key(event):

@@ -2129,6 +2129,26 @@ def test_enter_picks_best_match_then_second_enter_adds_product(db, errors):
     dialog.close()
 
 
+def test_enter_on_focused_combo_picks_category_not_product(db, errors):
+    # W aplikacji fokus ma samo pole wyboru, a nie jego pole tekstowe.
+    dialog, combo = _category_dialog(db)
+    assert QApplication.focusWidget() is combo
+    QTest.keyClicks(combo, "wynag")
+    QTest.keyClick(combo, Qt.Key.Key_Return)
+    assert combo.currentText() == "Wynagrodzenie"
+    assert dialog.table.rowCount() == 1
+    assert not combo.results.isVisible()
+
+    QTest.keyClick(combo, Qt.Key.Key_Down)
+    assert combo.results.isVisible() and len(combo.match_names()) == combo.count()
+    QTest.keyClick(combo, Qt.Key.Key_Escape)
+    assert not combo.results.isVisible()
+
+    QTest.keyClick(combo, Qt.Key.Key_Return)
+    assert dialog.table.rowCount() == 2
+    dialog.close()
+
+
 def test_arrows_choose_another_match_and_wrap(db, errors):
     dialog, combo = _category_dialog(db)
     line = combo.lineEdit()
