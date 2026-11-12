@@ -29,13 +29,8 @@ def budget_currencies(db):
     ]
 
 
-def set_budgets(db, category_id, amounts):
-    """Zapisuje limity kategorii z mapy {waluta: tekst kwoty}; pusty tekst usuwa limit.
-
-    Wszystkie waluty zapisują się razem albo żadna.
-    """
-    if db.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone() is None:
-        raise ValidationError("Ta kategoria już nie istnieje.")
+def parse_budgets(amounts):
+    """Grosze z mapy {waluta: tekst kwoty}; pusty tekst oznacza brak limitu (None)."""
     parsed = {}
     errors = []
     for currency, text in amounts.items():
@@ -52,23 +47,39 @@ def set_budgets(db, category_id, amounts):
         parsed[currency] = cents
     if errors:
         raise ValidationError(errors)
+    return parsed
+
+
+def write_budgets(db, category_id, parsed):
+    """Zapis wyniku parse_budgets; wołający odpowiada za transakcję."""
+    for currency, cents in parsed.items():
+        if cents is None:
+            db.execute(
+                "DELETE FROM budgets WHERE category_id = ? AND currency = ?",
+                (category_id, currency),
+            )
+        else:
+            db.execute(
+                """
+                INSERT INTO budgets (category_id, currency, amount_cents)
+                VALUES (?, ?, ?)
+                ON CONFLICT (category_id, currency)
+                DO UPDATE SET amount_cents = excluded.amount_cents
+                """,
+                (category_id, currency, cents),
+            )
+
+
+def set_budgets(db, category_id, amounts):
+    """Zapisuje limity kategorii z mapy {waluta: tekst kwoty}; pusty tekst usuwa limit.
+
+    Wszystkie waluty zapisują się razem albo żadna.
+    """
+    if db.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone() is None:
+        raise ValidationError("Ta kategoria już nie istnieje.")
+    parsed = parse_budgets(amounts)
     with db:
-        for currency, cents in parsed.items():
-            if cents is None:
-                db.execute(
-                    "DELETE FROM budgets WHERE category_id = ? AND currency = ?",
-                    (category_id, currency),
-                )
-            else:
-                db.execute(
-                    """
-                    INSERT INTO budgets (category_id, currency, amount_cents)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT (category_id, currency)
-                    DO UPDATE SET amount_cents = excluded.amount_cents
-                    """,
-                    (category_id, currency, cents),
-                )
+        write_budgets(db, category_id, parsed)
 
 
 def budget_usage(spent, limit):

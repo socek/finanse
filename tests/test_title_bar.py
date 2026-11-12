@@ -2,7 +2,7 @@ import pytest
 from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
 
 from finanse.gui import common, title_bar
-from finanse.gui.dialogs import BudgetDialog
+from finanse.gui.dialogs import CategoryDialog
 from finanse.gui.main_window import MainWindow
 from finanse.gui.settings_tab import SettingsTab
 from finanse.settings import load_settings
@@ -46,10 +46,10 @@ def test_main_window_and_dialogs_get_a_title_bar(db, qapp, bars):
     assert window.contentsMargins().top() == title_bar.HEIGHT
 
     create_wallet(db, "A")
-    dialog = BudgetDialog(db, 1, "Jedzenie")
+    dialog = CategoryDialog(db, 1, "Jedzenie")
     height = dialog.height()
     bar = shown(dialog, qapp)
-    assert bar.title.text() == "Budżet: Jedzenie"
+    assert bar.title.text() == "Edycja kategorii"
     assert dialog.height() == height + title_bar.HEIGHT
     dialog.setWindowTitle("Inny tytuł")
     qapp.processEvents()
@@ -60,7 +60,7 @@ def test_main_window_and_dialogs_get_a_title_bar(db, qapp, bars):
 
 def test_close_button_rejects_dialog(db, qapp, bars):
     create_wallet(db, "A")
-    dialog = BudgetDialog(db, 1, "Jedzenie")
+    dialog = CategoryDialog(db, 1, "Jedzenie")
     shown(dialog, qapp).close_button.click()
     assert not dialog.isVisible()
     assert dialog.result() == QDialog.DialogCode.Rejected
@@ -86,7 +86,7 @@ def test_disabled_bar_is_not_added(db, qapp):
 
 def test_setting_toggles_open_windows_and_is_saved(db, qapp, bars):
     create_wallet(db, "A")
-    dialog = BudgetDialog(db, 1, "Jedzenie")
+    dialog = CategoryDialog(db, 1, "Jedzenie")
     bar = shown(dialog, qapp)
     height = dialog.height()
     settings = SettingsTab(db)

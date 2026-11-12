@@ -1,5 +1,6 @@
 import sqlite3
 
+from .budgets import parse_budgets, write_budgets
 from .errors import ValidationError
 
 MAX_NAME_LENGTH = 50
@@ -44,6 +45,32 @@ def rename_category(db, category_id, name):
             db.execute(
                 "UPDATE categories SET name = ? WHERE id = ?", (name, category_id)
             )
+    except sqlite3.IntegrityError:
+        raise ValidationError("Masz już kategorię o tej nazwie.") from None
+
+
+def update_category(db, category_id, name, amounts):
+    """Nowa nazwa i miesięczne budżety ({waluta: tekst kwoty}) zapisane razem albo wcale.
+
+    Błędy nazwy i kwot są zgłaszane jednocześnie, żeby poprawić wszystko za jednym razem.
+    """
+    errors = []
+    try:
+        name = _clean(name)
+    except ValidationError as error:
+        errors += error.errors
+    try:
+        parsed = parse_budgets(amounts)
+    except ValidationError as error:
+        errors += error.errors
+    if errors:
+        raise ValidationError(errors)
+    if db.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone() is None:
+        raise ValidationError("Ta kategoria już nie istnieje.")
+    try:
+        with db:
+            db.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
+            write_budgets(db, category_id, parsed)
     except sqlite3.IntegrityError:
         raise ValidationError("Masz już kategorię o tej nazwie.") from None
 

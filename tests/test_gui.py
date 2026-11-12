@@ -1873,7 +1873,7 @@ def test_categories_tab_deletes_only_empty(db, errors):
 
     row = select("Używana")
     assert (tab.table.item(row, 1).text(), tab.table.item(row, 2).text()) == ("1", "0")
-    assert not tab.delete_button.isEnabled() and tab.rename_button.isEnabled()
+    assert not tab.delete_button.isEnabled() and tab.edit_button.isEnabled()
     assert "pustą" in tab.delete_button.toolTip()
     assert "(produkty: 1)" in tab.delete_button.toolTip()
     tab.delete()  # np. klawiszem Delete
@@ -2795,9 +2795,9 @@ def test_category_row_menu_offers_delete_only_when_empty(db, errors, monkeypatch
     row_of = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
 
     tab.table.setCurrentCell(row_of["Mieszkanie"], 0)
-    assert [a.text() for a in tab._row_menu().actions()] == ["Budżet", "Zmień nazwę"]
+    assert [a.text() for a in tab._row_menu().actions()] == ["Edytuj"]
     tab.table.setCurrentCell(row_of["Pusta"], 0)
-    assert [a.text() for a in tab._row_menu().actions()] == ["Budżet", "Zmień nazwę", "Usuń"]
+    assert [a.text() for a in tab._row_menu().actions()] == ["Edytuj", "Usuń"]
     _choose(tab, "Usuń")
     assert "Pusta" not in [tab.table.item(r, 0).text() for r in range(tab.table.rowCount())]
 

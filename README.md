@@ -167,7 +167,7 @@ zakresie dłuższym niż 24 miesiące, lata. Kliknięcie słupka otwiera raport 
 lub roku. Przyciski poprzedni i następny przesuwają okres o jego długość.
 
 Budżet to miesięczny limit wydatków w kategorii, ustawiany w zakładce **Kategorie i tagi**
-osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z wydatkami
+w oknie **Edytuj**, razem z nazwą kategorii, osobno dla każdej waluty i taki sam w każdym miesiącu. Raport porównuje go z wydatkami
 z portfeli wybranych w raporcie, bez przychodów i przelewów. W raporcie za rok lub zakres dat limit
 jest mnożony przez liczbę miesięcy, a niepełny miesiąc liczy się według dni. Od 80% limitu pasek jest
 bursztynowy, a po przekroczeniu czerwony. Usunięcie kategorii usuwa też jej budżet.

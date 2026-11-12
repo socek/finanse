@@ -1,13 +1,13 @@
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QDialog, QLabel
+from PySide6.QtWidgets import QApplication, QDialog, QLabel
 
 from finanse.budgets import budget_currencies, budget_usage, list_budgets, set_budgets
 from finanse.categories import create_category, delete_category
 from finanse.errors import ValidationError
 from finanse.gui import common
 from finanse.gui.categories_tab import BUDGET, CategoriesTab
-from finanse.gui.dialogs import BudgetDialog
+from finanse.gui.dialogs import CategoryDialog
 from finanse.gui.reports_tab import ReportsTab
 from finanse.history import history_text
 from finanse.reports import build_report
@@ -131,12 +131,13 @@ def test_budget_dialog_and_categories_column(db, errors):
     create_wallet(db, "A", "PLN")
     create_wallet(db, "B", "EUR")
     tab = CategoriesTab(db)
-    assert not tab.budget_button.isEnabled()
+    assert not tab.edit_button.isEnabled()
     row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 0).text() == "Jedzenie")
     assert tab.table.item(row, BUDGET).text() == "–"
 
     food = category_id(db, "Jedzenie")
-    dialog = BudgetDialog(db, food, "Jedzenie")
+    dialog = CategoryDialog(db, food, "Jedzenie")
+    assert dialog.name.text() == "Jedzenie"
     assert list(dialog.amounts) == ["EUR", "PLN"]
     QTest.keyClicks(dialog.amounts["PLN"], "-800")
     assert dialog.amounts["PLN"].text() == "800"
@@ -150,18 +151,48 @@ def test_budget_dialog_and_categories_column(db, errors):
 
     tab.refresh()
     assert tab.table.item(row, BUDGET).text().replace("\xa0", " ") == "800,00 PLN"
-    reopened = BudgetDialog(db, food, "Jedzenie")
+    reopened = CategoryDialog(db, food, "Jedzenie")
     assert reopened.amounts["PLN"].text() == "800,00"
     tab.table.setCurrentCell(row, 0)
-    assert tab.budget_button.isEnabled()
+    assert tab.edit_button.isEnabled()
     assert "budżet też zostanie usunięty" in tab._delete_question("Jedzenie")
 
 
-def test_budget_needs_a_wallet(db, errors):
-    tab = CategoriesTab(db)
-    tab.table.setCurrentCell(0, 0)
-    tab.edit_budget()
-    assert "Dodaj najpierw portfel" in errors[0]
+def test_category_dialog_without_wallets_only_renames(db, errors):
+    food = category_id(db, "Jedzenie")
+    dialog = CategoryDialog(db, food, "Jedzenie")
+    assert dialog.amounts == {}
+    dialog.name.setText("Jedzonko")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert category_id(db, "Jedzonko") == food
+
+
+def test_category_dialog_saves_name_and_budget_together(db, errors):
+    create_wallet(db, "A", "PLN")
+    food = category_id(db, "Jedzenie")
+    dialog = CategoryDialog(db, food, "Jedzenie")
+    dialog.name.setText("Rachunki")  # zajęta nazwa
+    dialog.amounts["PLN"].setText("300")
+    dialog.accept()
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert errors == ["Masz już kategorię o tej nazwie."]
+    assert list_budgets(db) == []  # budżet nie zapisał się bez nazwy
+
+    errors.clear()
+    dialog.name.setText("")
+    dialog.amounts["PLN"].setText("x")
+    dialog.accept()
+    assert len(errors) == 2  # oba błędy naraz
+    assert category_id(db, "Jedzenie") == food
+
+    errors.clear()
+    dialog.name.setText("Jedzonko")
+    dialog.amounts["PLN"].setText("300")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert category_id(db, "Jedzonko") == food
+    assert [(b["category_name"], b["amount_cents"]) for b in list_budgets(db)] == [("Jedzonko", 30000)]
 
 
 def test_reports_tab_shows_budgets(db, errors):
@@ -189,11 +220,19 @@ def test_reports_tab_shows_budgets(db, errors):
     assert "przekroczono o 20,00 PLN" in texts
 
 
-def test_double_click_on_budget_column_opens_budget(db, errors, monkeypatch):
+def test_double_click_opens_dialog_focused_on_clicked_column(db, errors, monkeypatch):
     create_wallet(db, "A", "PLN")
     opened = []
-    monkeypatch.setattr(BudgetDialog, "exec", lambda dialog: opened.append(dialog) or 0)
+    monkeypatch.setattr(CategoryDialog, "exec", lambda dialog: opened.append(dialog) or 0)
     tab = CategoriesTab(db)
+    tab.show()
     tab.table.setCurrentCell(0, BUDGET)
     tab.table.itemDoubleClicked.emit(tab.table.item(0, BUDGET))
-    assert len(opened) == 1
+    tab.table.itemDoubleClicked.emit(tab.table.item(0, 0))
+    assert len(opened) == 2
+    for dialog in opened:
+        dialog.show()
+    QApplication.processEvents()
+    assert opened[0].focusWidget() is opened[0].amounts["PLN"]
+    assert opened[1].focusWidget() is opened[1].name
+    tab.close()

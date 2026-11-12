@@ -2,7 +2,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -13,18 +12,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..budgets import budget_currencies, list_budgets
+from ..budgets import list_budgets
 from ..categories import (
     create_category,
     delete_category,
     deletion_block_reason,
     list_categories,
-    rename_category,
 )
 from ..errors import ValidationError
 from ..money import format_money, format_totals
 from . import common, shortcuts
-from .dialogs import BudgetDialog
+from .dialogs import CategoryDialog
 from .tags_panel import TagsPanel
 
 BUDGET = 3
@@ -60,7 +58,7 @@ class CategoriesTab(QWidget):
             BUDGET, QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.itemDoubleClicked.connect(
-            lambda item: self.edit_budget() if item.column() == BUDGET else self.rename()
+            lambda item: self.edit(focus_budget=item.column() == BUDGET)
         )
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
         common.attach_row_menu(self.table, self._row_menu)
@@ -69,20 +67,16 @@ class CategoriesTab(QWidget):
         )
         self.empty = QLabel("Nie masz jeszcze kategorii.")
 
-        self.rename_button = QPushButton("Zmień nazwę")
-        shortcuts.show_on(self.rename_button, "edit_selected")
-        self.rename_button.clicked.connect(self.rename)
+        self.edit_button = QPushButton("Edytuj")
+        shortcuts.show_on(self.edit_button, "edit_selected")
+        self.edit_button.clicked.connect(lambda: self.edit())
         self.delete_button = QPushButton("Usuń")
         self.delete_button.clicked.connect(self.delete)
-        self.budget_button = QPushButton("Budżet")
-        self.budget_button.setToolTip("Miesięczny limit wydatków w zaznaczonej kategorii.")
-        self.budget_button.clicked.connect(self.edit_budget)
         self.summary = QLabel()
         actions = QHBoxLayout()
         actions.addWidget(self.summary)
         actions.addStretch()
-        actions.addWidget(self.budget_button)
-        actions.addWidget(self.rename_button)
+        actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
 
         self.tags = TagsPanel(db)
@@ -97,7 +91,7 @@ class CategoriesTab(QWidget):
         self.refresh()
 
     def edit_selected(self):
-        self.rename()
+        self.edit()
 
     def refresh(self):
         categories = list_categories(self.db)
@@ -147,8 +141,7 @@ class CategoriesTab(QWidget):
     def _update_buttons(self):
         row = self.table.currentRow()
         selected = row >= 0
-        self.rename_button.setEnabled(selected)
-        self.budget_button.setEnabled(selected)
+        self.edit_button.setEnabled(selected)
         reason = self._block_reason(row) if selected else "Zaznacz kategorię."
         self.delete_button.setEnabled(not reason)
         self.delete_button.setToolTip(shortcuts.tooltip("delete_selected", reason))
@@ -156,8 +149,7 @@ class CategoriesTab(QWidget):
     def _row_menu(self):
         """Menu zaznaczonej kategorii; niepustej nie da się usunąć."""
         menu = QMenu(self)
-        menu.addAction("Budżet", self.edit_budget)
-        menu.addAction("Zmień nazwę", self.rename)
+        menu.addAction("Edytuj", self.edit)
         if not self._block_reason(self.table.currentRow()):
             menu.addAction("Usuń", self.delete)
         return menu
@@ -171,37 +163,19 @@ class CategoriesTab(QWidget):
         self.new_name.clear()
         self.refresh()
 
-    def rename(self):
-        category_id, current = self._selected()
+    def edit(self, focus_budget=False):
+        """Nazwa i budżety w jednym oknie; dwuklik w kolumnę budżetu zaczyna od kwoty."""
+        category_id, name = self._selected()
         if category_id is None:
             return
-        name, accepted = QInputDialog.getText(
-            self, "Zmiana nazwy", "Nowa nazwa kategorii:", text=current
-        )
-        if not accepted:
-            return
-        try:
-            rename_category(self.db, category_id, name)
-        except ValidationError as error:
-            common.show_errors(self, error.errors)
-            return
-        self.refresh()
+        if CategoryDialog(self.db, category_id, name, focus_budget, parent=self).exec():
+            self.refresh()
 
     def _delete_question(self, name):
         question = f"Usunąć pustą kategorię „{name}”?"
         if self.table.item(self.table.currentRow(), BUDGET).text() != "–":
             question += " Jej budżet też zostanie usunięty."
         return question
-
-    def edit_budget(self):
-        category_id, name = self._selected()
-        if category_id is None:
-            return
-        if not budget_currencies(self.db):
-            common.show_errors(self, ["Dodaj najpierw portfel, żeby wybrać walutę budżetu."])
-            return
-        if BudgetDialog(self.db, category_id, name, parent=self).exec():
-            self.refresh()
 
     def delete(self):
         category_id, name = self._selected()

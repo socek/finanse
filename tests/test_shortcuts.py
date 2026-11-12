@@ -375,7 +375,7 @@ def test_no_button_text_contains_a_shortcut(db, window):
         (lambda w: w.reports.previous_button, "previous_month"),
         (lambda w: w.reports.next_button, "next_month"),
         (lambda w: w.reports.select_all_button, "check_all"),
-        (lambda w: w.categories.rename_button, "edit_selected"),
+        (lambda w: w.categories.edit_button, "edit_selected"),
     ],
 )
 def test_main_buttons_have_shortcut_tooltips(db, window, get_button, key):

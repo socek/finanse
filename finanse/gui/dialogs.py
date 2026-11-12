@@ -20,8 +20,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..budgets import budget_currencies, list_budgets, set_budgets
-from ..categories import list_categories
+from ..budgets import budget_currencies, list_budgets
+from ..categories import MAX_NAME_LENGTH as MAX_CATEGORY_NAME_LENGTH
+from ..categories import list_categories, update_category
 from ..errors import ValidationError
 from ..money import (
     format_money,
@@ -796,21 +797,24 @@ class RecurringDialog(_ProductRowsMixin, _SavingDialog):
             update_recurring(self.db, self.recurring_id, *values)
 
 
-class BudgetDialog(_SavingDialog):
-    """Miesięczne limity jednej kategorii, po jednym polu na walutę."""
+class CategoryDialog(_SavingDialog):
+    """Nazwa kategorii i jej miesięczne limity, po jednym polu na walutę."""
 
-    def __init__(self, db, category_id, category_name, parent=None):
+    def __init__(self, db, category_id, category_name, focus_budget=False, parent=None):
         super().__init__(parent)
         self.db = db
         self.category_id = category_id
-        self.setWindowTitle(f"Budżet: {category_name}")
+        self.setWindowTitle("Edycja kategorii")
         current = {
             budget["currency"]: budget["amount_cents"]
             for budget in list_budgets(db)
             if budget["category_id"] == category_id
         }
-        self.amounts = {}
+        self.name = QLineEdit(category_name)
+        self.name.setMaxLength(MAX_CATEGORY_NAME_LENGTH)
         form = QFormLayout()
+        form.addRow("Nazwa", self.name)
+        self.amounts = {}
         for currency in budget_currencies(db):
             field = QLineEdit(
                 format_money_input(current[currency]) if currency in current else ""
@@ -818,22 +822,31 @@ class BudgetDialog(_SavingDialog):
             field.setPlaceholderText("puste: bez budżetu")
             field.textEdited.connect(lambda _text, f=field: _remove_minus(f))
             self.amounts[currency] = field
-            form.addRow(f"Miesięcznie w {currency}", field)
-        hint = common.plain_label(
-            "Limit wydatków w tej kategorii w każdym miesiącu. Raport porównuje go"
-            " z wydatkami z wybranych w nim portfeli."
-        )
+            form.addRow(f"Budżet miesięcznie w {currency}", field)
+        if self.amounts:
+            text = (
+                "Budżet to limit wydatków w tej kategorii w każdym miesiącu. Raport porównuje"
+                " go z wydatkami z wybranych w nim portfeli."
+            )
+        else:
+            text = "Dodaj portfel, żeby ustawić budżet w jego walucie."
+        hint = common.plain_label(text)
         hint.setWordWrap(True)
         layout = QVBoxLayout(self)
-        layout.addWidget(hint)
         layout.addLayout(form)
+        layout.addWidget(hint)
         layout.addWidget(_buttons(self, "Zapisz", "save"))
         self.resize(420, self.sizeHint().height())
+        first = next(iter(self.amounts.values()), None)
+        (first if focus_budget and first else self.name).setFocus()
+        if not (focus_budget and first):
+            self.name.selectAll()
 
     def save(self):
-        set_budgets(
+        update_category(
             self.db,
             self.category_id,
+            self.name.text(),
             {currency: field.text() for currency, field in self.amounts.items()},
         )
 
