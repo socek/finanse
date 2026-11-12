@@ -8,6 +8,9 @@
   z wyszarzonym opisem i terminem, ale nie liczy się do sumy, prognozy salda ani liczby płatności
   po terminie.
 - Menu pod prawym przyciskiem myszy na wierszach w zakładkach Cykliczne oraz Kategorie i tagi.
+- Kopiowanie kwot z Raportów: Ctrl+C lub menu pod prawym przyciskiem w tabelach i przy kwotach.
+  Do schowka trafia sama liczba, bez spacji i waluty (np. `1234,56`), a kilka komórek tabeli
+  wkleja się do arkusza w tym samym układzie.
 
 ## 0.2 (2026-11-07)
 

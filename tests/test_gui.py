@@ -33,7 +33,7 @@ from finanse.gui.recurring_tab import (
     REMAINING,
     RecurringTab,
 )
-from finanse.gui.reports_tab import ReportsTab
+from finanse.gui.reports_tab import ReportsTab, _copy_amount
 from finanse.gui.wallets_tab import WalletsTab
 from finanse.recurring import create_recurring, get_recurring, list_recurring, set_suspended
 from finanse.tags import list_tags, set_transaction_tags
@@ -1143,6 +1143,34 @@ def test_reports_tab_shows_month_and_navigates(db, errors):
     assert tab.trend_table.rowCount() == 12
     assert tab.chart._month_at(10) is None
     assert tab.chart._month_at(tab.chart.width() - 1) == 11
+
+
+def test_reports_tab_copies_amounts_without_spaces(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-10-05", price="1234567,89")
+    tab = ReportsTab(db)
+    tab.resize(1000, 800)
+    tab.show()
+    tab.show_month("2026-10")
+    assert "\xa0" in tab.expense_label.text()
+    assert tab.expense_label.copy_actions() == [("Kopiuj (1234567,89)", 123456789)]
+    _copy_amount(tab.expense_label.copy_actions()[0][1])
+    assert QApplication.clipboard().text() == "1234567,89"
+    assert tab.net_label.copy_actions()[0][1] == -123456789
+
+    tab.table_button.setChecked(True)
+    table = tab.trend_table
+    row = next(r for r in range(table.rowCount()) if table.item(r, 2).text().startswith("1"))
+    table.setCurrentCell(row, 2)
+    QTest.keyClick(table, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert QApplication.clipboard().text() == "1234567,89"
+
+    table.clearSelection()
+    for column in range(3):
+        table.item(row, column).setSelected(True)
+    table.copy_selection()
+    assert QApplication.clipboard().text() == f"{table.item(row, 0).text()}\t0,00\t1234567,89"
+    tab.close()
 
 
 def _check(tab, name, checked):

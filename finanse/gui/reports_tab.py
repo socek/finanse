@@ -1,8 +1,9 @@
 """Zakładka raportów: bilans miesiąca, kategorie i wykres z 12 miesięcy."""
 
 from PySide6.QtCore import QDate, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDateEdit,
     QFrame,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -24,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..money import format_money
+from ..money import format_money, format_money_input
 from ..reports import build_report
 from ..wallets import list_wallets
 from . import common, shortcuts
@@ -35,6 +37,110 @@ BAR_RADIUS = 4
 AXIS_WIDTH = 64
 LABEL_HEIGHT = 26
 TOP_MARGIN = 10
+AMOUNT_ROLE = Qt.ItemDataRole.UserRole + 1
+RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+
+def _copy_amount(cents):
+    """Do schowka trafia sama liczba, bez spacji tysięcy i waluty, np. -1234,56."""
+    QApplication.clipboard().setText(format_money_input(cents))
+
+
+class AmountLabel(QLabel):
+    """Etykieta z kwotami, które można skopiować z menu pod prawym przyciskiem."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.amounts = []
+
+    def set_amounts(self, text, *amounts):
+        """Kwoty to grosze albo pary (opis, grosze), gdy w tekście jest ich kilka."""
+        self.setText(text)
+        self.amounts = [amount if isinstance(amount, tuple) else ("", amount) for amount in amounts]
+
+    def copy_actions(self):
+        return [
+            (f"Kopiuj {caption + ' ' if caption else ''}({format_money_input(cents)})", cents)
+            for caption, cents in self.amounts
+        ]
+
+    def contextMenuEvent(self, event):
+        if not self.amounts:
+            return
+        menu = QMenu(self)
+        for title, cents in self.copy_actions():
+            menu.addAction(title, lambda cents=cents: _copy_amount(cents))
+        menu.exec(event.globalPos())
+
+
+class ReportTable(QTableWidget):
+    """Tabela tylko do odczytu; Ctrl+C i menu kopiują zaznaczone komórki.
+
+    Kwoty trafiają do schowka jako same liczby, a kilka komórek oddzielają tabulatory
+    i nowe wiersze, więc wklejają się do arkusza w tym samym układzie.
+    """
+
+    def __init__(self, columns, labels, parent=None):
+        super().__init__(0, columns, parent)
+        self.setHorizontalHeaderLabels(labels)
+        self.verticalHeader().hide()
+        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+    def set_row(self, row, cells, bold=False):
+        """Komórki to teksty albo kwoty w postaci (grosze, waluta)."""
+        for column, cell in enumerate(cells):
+            if isinstance(cell, tuple):
+                cents, currency = cell
+                item = QTableWidgetItem(format_money(cents, currency))
+                item.setData(AMOUNT_ROLE, cents)
+                item.setTextAlignment(RIGHT)
+            else:
+                item = QTableWidgetItem(cell)
+                if column:
+                    item.setTextAlignment(RIGHT)
+            if bold:
+                font = QFont(item.font())
+                font.setBold(True)
+                item.setFont(font)
+            self.setItem(row, column, item)
+
+    @staticmethod
+    def copy_text(item):
+        cents = item.data(AMOUNT_ROLE)
+        return item.text() if cents is None else format_money_input(cents)
+
+    def selection_text(self):
+        cells = sorted((item.row(), item.column(), item) for item in self.selectedItems())
+        if not cells:
+            current = self.currentItem()
+            return self.copy_text(current) if current else ""
+        rows = {}
+        for row, _column, item in cells:
+            rows.setdefault(row, []).append(self.copy_text(item))
+        return "\n".join("\t".join(texts) for texts in rows.values())
+
+    def copy_selection(self):
+        text = self.selection_text()
+        if text:
+            QApplication.clipboard().setText(text)
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.StandardKey.Copy):
+            self.copy_selection()
+            return
+        super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item is None:
+            return
+        if not item.isSelected():
+            self.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Kopiuj", self.copy_selection)
+        menu.exec(event.globalPos())
 
 
 def _top_rounded(rect):
@@ -313,9 +419,9 @@ class ReportsTab(QWidget):
         self.month_title = _section_title("")
         self.selection_label = common.plain_label()
         self.selection_label.setWordWrap(True)
-        self.income_label = QLabel()
-        self.expense_label = QLabel()
-        self.net_label = QLabel()
+        self.income_label = AmountLabel()
+        self.expense_label = AmountLabel()
+        self.net_label = AmountLabel()
         stats = QHBoxLayout()
         for caption, value in (
             ("Przychody", self.income_label),
@@ -334,25 +440,13 @@ class ReportsTab(QWidget):
         stats.addStretch()
 
         self.wallets_title = _section_title("Według portfeli")
-        self.wallets_table = QTableWidget(0, 4)
-        self.wallets_table.setHorizontalHeaderLabels(
-            ["Portfel", "Przychody", "Wydatki", "Bilans"]
-        )
-        self.wallets_table.verticalHeader().hide()
-        self.wallets_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.wallets_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
+        self.wallets_table = ReportTable(4, ["Portfel", "Przychody", "Wydatki", "Bilans"])
 
         self.vat_title = _section_title("VAT")
-        self.vat_table = QTableWidget(0, 5)
-        self.vat_table.setHorizontalHeaderLabels(
-            ["Stawka", "Sprzedaż netto", "VAT należny", "Zakupy netto", "VAT naliczony"]
+        self.vat_table = ReportTable(
+            5, ["Stawka", "Sprzedaż netto", "VAT należny", "Zakupy netto", "VAT naliczony"]
         )
-        self.vat_table.verticalHeader().hide()
-        self.vat_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.vat_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.vat_balance = QLabel()
+        self.vat_balance = AmountLabel()
 
         self.budgets_grid = QGridLayout()
         self.budgets_empty = QLabel()
@@ -360,13 +454,7 @@ class ReportsTab(QWidget):
         self.budgets_hint.setWordWrap(True)
 
         self.tags_title = _section_title("Według tagów")
-        self.tags_table = QTableWidget(0, 5)
-        self.tags_table.setHorizontalHeaderLabels(
-            ["Tag", "Transakcje", "Przychody", "Wydatki", "Bilans"]
-        )
-        self.tags_table.verticalHeader().hide()
-        self.tags_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tags_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tags_table = ReportTable(5, ["Tag", "Transakcje", "Przychody", "Wydatki", "Bilans"])
 
         self.expenses_grid = QGridLayout()
         self.expenses_empty = QLabel("Brak wydatków w tym okresie.")
@@ -391,13 +479,7 @@ class ReportsTab(QWidget):
         self.table_button = QPushButton("Pokaż jako tabelę")
         self.table_button.setCheckable(True)
         self.table_button.toggled.connect(self._toggle_table)
-        self.trend_table = QTableWidget(0, 3)
-        self.trend_table.setHorizontalHeaderLabels(["Miesiąc", "Przychody", "Wydatki"])
-        self.trend_table.verticalHeader().hide()
-        self.trend_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.trend_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
+        self.trend_table = ReportTable(3, ["Miesiąc", "Przychody", "Wydatki"])
         self.trend_table.hide()
 
         hint = QLabel("Raporty nie uwzględniają przelewów między portfelami.")
@@ -572,9 +654,12 @@ class ReportsTab(QWidget):
         self.month_title.setText(report["title"])
         self._fill_wallet_totals(report)
         self._fill_vat(report)
-        self.income_label.setText(format_money(report["income_total"], currency))
-        self.expense_label.setText(format_money(report["expense_total"], currency))
-        self.net_label.setText(format_money(report["net_total"], currency))
+        for label, key in (
+            (self.income_label, "income_total"),
+            (self.expense_label, "expense_total"),
+            (self.net_label, "net_total"),
+        ):
+            label.set_amounts(format_money(report[key], currency), report[key])
 
         self._fill_budgets(report)
         self._fill_tags(report)
@@ -598,18 +683,10 @@ class ReportsTab(QWidget):
         self.trend_table.setVisible(has_data and self.table_button.isChecked())
         self.trend_table.setRowCount(len(trend["months"]))
         for row, month in enumerate(trend["months"]):
-            cells = (
-                month["title"],
-                format_money(month["income"], currency),
-                format_money(month["expense"], currency),
+            self.trend_table.set_row(
+                row,
+                (month["title"], (month["income"], currency), (month["expense"], currency)),
             )
-            for column, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                self.trend_table.setItem(row, column, item)
         _fit_height(self.trend_table)
 
     def _remember_period(self, report):
@@ -690,30 +767,22 @@ class ReportsTab(QWidget):
         rows = [*vat["by_rate"], {"label": "Razem", **vat}]
         self.vat_table.setRowCount(len(rows))
         for row, data in enumerate(rows):
-            cells = (
-                data["label"],
-                format_money(data["sales_net"], currency),
-                format_money(data["sales_vat"], currency),
-                format_money(data["purchases_net"], currency),
-                format_money(data["purchases_vat"], currency),
+            amounts = ("sales_net", "sales_vat", "purchases_net", "purchases_vat")
+            self.vat_table.set_row(
+                row,
+                (data["label"], *((data[key], currency) for key in amounts)),
+                bold=data is rows[-1],
             )
-            for column, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                if data is rows[-1]:
-                    font = QFont(item.font())
-                    font.setBold(True)
-                    item.setFont(font)
-                self.vat_table.setItem(row, column, item)
         _fit_height(self.vat_table)
         balance = vat["balance"]
         if balance >= 0:
-            self.vat_balance.setText(f"VAT do zapłaty: {format_money(balance, currency)}")
+            self.vat_balance.set_amounts(
+                f"VAT do zapłaty: {format_money(balance, currency)}", balance
+            )
         else:
-            self.vat_balance.setText(f"Nadwyżka VAT naliczonego: {format_money(-balance, currency)}")
+            self.vat_balance.set_amounts(
+                f"Nadwyżka VAT naliczonego: {format_money(-balance, currency)}", -balance
+            )
 
     def _fill_wallet_totals(self, report):
         """Rozbicie ma sens dopiero przy co najmniej dwóch portfelach."""
@@ -724,19 +793,10 @@ class ReportsTab(QWidget):
         self.wallets_table.setRowCount(len(totals))
         currency = report["currency"]
         for row, wallet in enumerate(totals):
-            cells = (
-                wallet["name"],
-                format_money(wallet["income"], currency),
-                format_money(wallet["expense"], currency),
-                format_money(wallet["net"], currency),
+            self.wallets_table.set_row(
+                row,
+                (wallet["name"], *((wallet[key], currency) for key in ("income", "expense", "net"))),
             )
-            for column, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                self.wallets_table.setItem(row, column, item)
         _fit_height(self.wallets_table)
 
     def _fill_tags(self, report):
@@ -747,20 +807,14 @@ class ReportsTab(QWidget):
         currency = report["currency"]
         self.tags_table.setRowCount(len(tags))
         for row, tag in enumerate(tags):
-            cells = (
-                tag["name"],
-                str(tag["transactions"]),
-                format_money(tag["income"], currency),
-                format_money(tag["expense"], currency),
-                format_money(tag["net"], currency),
+            self.tags_table.set_row(
+                row,
+                (
+                    tag["name"],
+                    str(tag["transactions"]),
+                    *((tag[key], currency) for key in ("income", "expense", "net")),
+                ),
             )
-            for column, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                self.tags_table.setItem(row, column, item)
         _fit_height(self.tags_table)
 
     def _fill_budgets(self, report):
@@ -787,6 +841,7 @@ class ReportsTab(QWidget):
             if budget["over"]:
                 color = common.overdue_background()
                 status = f"przekroczono o {format_money(-budget['left'], currency)}"
+                remaining = ("przekroczenie", -budget["left"])
             else:
                 color = (
                     common.warning_background()
@@ -794,12 +849,17 @@ class ReportsTab(QWidget):
                     else common.positive_color()
                 )
                 status = f"zostało {format_money(budget['left'], currency)}"
-            usage = QLabel(
+                remaining = ("pozostało", budget["left"])
+            usage = AmountLabel()
+            usage.set_amounts(
                 f"{format_money(budget['spent'], currency)} z "
-                f"{format_money(budget['limit'], currency)}  ({budget['percent']}%)"
+                f"{format_money(budget['limit'], currency)}  ({budget['percent']}%)",
+                ("wydatki", budget["spent"]),
+                ("limit", budget["limit"]),
             )
             usage.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            state = QLabel(status)
+            state = AmountLabel()
+            state.set_amounts(status, remaining)
             if budget["over"]:
                 font = QFont(state.font())
                 font.setBold(True)
@@ -826,7 +886,8 @@ class ReportsTab(QWidget):
         grid.setColumnStretch(1, 1)
         grid.setColumnMinimumWidth(2, 190)
         for index, row in enumerate(rows):
-            value = QLabel(f"{format_money(row['total'], currency)}  ({row['share']})")
+            value = AmountLabel()
+            value.set_amounts(f"{format_money(row['total'], currency)}  ({row['share']})", row["total"])
             value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             name = common.plain_label(row["name"])
             if row["name"] == common.NO_CATEGORY_NAME:
