@@ -1,6 +1,6 @@
 """Zakładka produktów: same pozycje rachunków wybranego portfela, według dni."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -39,6 +39,8 @@ VAT_RATE, NET, VAT_AMOUNT = 10, 11, 12  # za kolumnami sum dnia, a na ekranie pr
 
 
 class ProductsTab(QWidget):
+    selection_changed = Signal()
+
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
@@ -68,6 +70,7 @@ class ProductsTab(QWidget):
             extra_headers=("Stawka", "Netto", "VAT"),
         )
         self.tree.currentItemChanged.connect(self._update_buttons)
+        self.tree.itemSelectionChanged.connect(self.selection_changed)
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_transaction())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_menu)
@@ -197,6 +200,8 @@ class ProductsTab(QWidget):
             ]
         )
         item.setData(0, KEY_ROLE, ("product", product["id"], product["transaction_id"]))
+        signed = product["total_cents"] if income else -product["total_cents"]
+        item.setData(0, common.SUM_ROLE, [(product["currency"], signed)])
         if product["wallet_type"] == WALLET_WITH_VAT:
             rate = product["vat_rate"]
             net = product["total_cents"] - product["vat_cents"]
@@ -241,11 +246,12 @@ class ProductsTab(QWidget):
         if name is not None:
             PriceHistoryDialog(self.db, name, parent=self).exec()
 
+    def selection_summary(self):
+        return self.tree.selection_summary()
+
     def _show_menu(self, position):
-        item = self.tree.itemAt(position)
-        if item is None:
+        if self.tree.show_menu_at(position) is None:
             return
-        self.tree.setCurrentItem(item)
         if self.selected_transaction() is None:
             return
         menu = QMenu(self)

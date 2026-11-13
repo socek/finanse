@@ -13,6 +13,11 @@
 - Kopiowanie kwot z Raportów: Ctrl+C lub menu pod prawym przyciskiem w tabelach i przy kwotach.
   Do schowka trafia sama liczba, bez spacji i waluty (np. `1234,56`), a kilka komórek tabeli
   wkleja się do arkusza w tym samym układzie.
+- Zaznaczanie wielu wierszy z Ctrl i Shift w listach operacji, produktów, transakcji cyklicznych,
+  kategorii, tagów i w tabelach raportów. Pasek stanu na dole okna pokazuje liczbę zaznaczonych
+  pozycji i ich sumę według walut; zaznaczony dzień liczy się ze wszystkimi swoimi pozycjami.
+- Usuwanie kilku zaznaczonych operacji, transakcji cyklicznych, pustych kategorii lub tagów
+  naraz, po jednym potwierdzeniu.
 
 ## 0.2 (2026-11-07)
 

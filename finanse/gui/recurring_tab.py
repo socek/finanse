@@ -43,6 +43,7 @@ SUSPENDED_HINT = "Zawieszona: nie liczy się do sum, prognozy ani płatności po
 class RecurringTab(QWidget):
     # Liczba płatności po terminie lub na dzisiaj, do pokazania w nazwie zakładki.
     due_count_changed = Signal(int)
+    selection_changed = Signal()
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -76,7 +77,7 @@ class RecurringTab(QWidget):
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        common.multi_select(self.table)
         self.table.setAlternatingRowColors(True)
         header = self.table.horizontalHeader()
         for column in range(self.table.columnCount()):
@@ -88,6 +89,8 @@ class RecurringTab(QWidget):
             )
         self.table.itemDoubleClicked.connect(lambda *_: self.edit())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        self.table.itemSelectionChanged.connect(self.selection_changed)
+        self.table.itemSelectionChanged.connect(self._update_buttons)
         common.attach_row_menu(self.table, self._row_menu)
         self.delete_shortcut = shortcuts.bind(
             "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
@@ -193,6 +196,11 @@ class RecurringTab(QWidget):
                 cell.setTextAlignment(RIGHT)
             self.table.setItem(row, column, cell)
         self.table.item(row, DESCRIPTION).setData(Qt.ItemDataRole.UserRole, item["id"])
+        if item["total_cents"] is not None:
+            signed = item["total_cents"] if income else -item["total_cents"]
+            self.table.item(row, DESCRIPTION).setData(
+                common.SUM_ROLE, [(item["currency"], signed)]
+            )
         if categories == common.NO_CATEGORY_NAME:
             common.mark_no_category_cell(self.table.item(row, CATEGORY))
         self._mark_due(self.table.item(row, DUE), days_until_due(item))
@@ -243,11 +251,28 @@ class RecurringTab(QWidget):
             return None
         return self.table.item(row, DESCRIPTION).data(Qt.ItemDataRole.UserRole)
 
+    def selection_summary(self):
+        """Suma zaznaczonych kwot; transakcje z kwotą ustalaną przy płatności są pomijane."""
+        rows = common.selected_rows(self.table)
+        totals = {}
+        for row in rows:
+            common.add_amounts(totals, self.table.item(row, DESCRIPTION).data(common.SUM_ROLE))
+        return common.selection_summary(len(rows), totals)
+
+    def _selected_rows(self):
+        rows = common.selected_rows(self.table)
+        return [row for row in rows if self.table.item(row, DESCRIPTION)]
+
+    def _delete_label(self):
+        count = len(self._selected_rows())
+        return f"Usuń zaznaczone ({count})" if count > 1 else "Usuń"
+
     def _update_buttons(self):
         selected_id = self.selected_id()
         selected = selected_id is not None
         self.edit_button.setEnabled(selected)
-        self.delete_button.setEnabled(selected)
+        self.delete_button.setEnabled(selected or bool(self._selected_rows()))
+        self.delete_button.setText(self._delete_label())
         self.skip_button.setEnabled(selected_id in self.skippable)
         self.suspend_button.setEnabled(selected)
         self.suspend_button.setText("Wznów" if selected_id in self.suspended else "Zawieś")
@@ -264,7 +289,7 @@ class RecurringTab(QWidget):
             "Wznów" if recurring_id in self.suspended else "Zawieś", self.toggle_suspended
         )
         menu.addAction("Edytuj", self.edit)
-        menu.addAction("Usuń", self.delete)
+        menu.addAction(self._delete_label(), self.delete)
         return menu
 
     def edit_selected(self):
@@ -290,6 +315,18 @@ class RecurringTab(QWidget):
             self.refresh()
 
     def delete(self):
+        rows = self._selected_rows()
+        if len(rows) > 1:
+            question = (
+                f"Usunąć zaznaczone transakcje cykliczne ({len(rows)})? "
+                "Zapłacone już transakcje zostaną w portfelu."
+            )
+            if common.confirm(self, question):
+                for row in rows:
+                    item = self.table.item(row, DESCRIPTION)
+                    delete_recurring(self.db, item.data(Qt.ItemDataRole.UserRole))
+                self.refresh()
+            return
         recurring_id = self.selected_id()
         if recurring_id is None:
             return

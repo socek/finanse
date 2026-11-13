@@ -1,6 +1,6 @@
 """Zakładka portfeli: lista po lewej, operacje wybranego portfela po prawej."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -51,6 +51,8 @@ NET, VAT_AMOUNT = 7, 8  # za kolumnami sum dnia, a na ekranie przed kwotą
 
 
 class WalletsTab(QWidget):
+    selection_changed = Signal()
+
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
@@ -112,6 +114,8 @@ class WalletsTab(QWidget):
             extra_headers=("Netto", "VAT"),
         )
         self.tree.currentItemChanged.connect(self._update_entry_buttons)
+        self.tree.itemSelectionChanged.connect(self.selection_changed)
+        self.tree.itemSelectionChanged.connect(self._update_entry_buttons)
         self.tree.itemDoubleClicked.connect(lambda *_: self.edit_entry())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_entry_menu)
@@ -328,6 +332,8 @@ class WalletsTab(QWidget):
             ]
         )
         item.setData(DATE, ENTRY_ROLE, ("transaction", transaction["id"]))
+        signed = transaction["total_cents"] if income else -transaction["total_cents"]
+        item.setData(DATE, common.SUM_ROLE, [(transaction["currency"], signed)])
         if transaction["wallet_type"] == VAT:
             net = transaction["total_cents"] - transaction["vat_cents"]
             item.setText(NET, format_money(net, transaction["currency"]))
@@ -360,9 +366,23 @@ class WalletsTab(QWidget):
             ["", f"{transfer['description']} ({other})", route, "Przelew", amount]
         )
         item.setData(DATE, ENTRY_ROLE, ("transfer", transfer["id"]))
+        # Do sumy liczy się tylko to, co wyszło z wybranych portfeli albo do nich weszło.
+        amounts = []
+        if transfer["from_wallet_id"] in wallet_ids:
+            amounts.append((transfer["from_currency"], -transfer["amount_from_cents"]))
+        if transfer["to_wallet_id"] in wallet_ids:
+            amounts.append((transfer["to_currency"], transfer["amount_to_cents"]))
+        item.setData(DATE, common.SUM_ROLE, amounts)
         item.setTextAlignment(AMOUNT, RIGHT)
         item.setToolTip(CATEGORY, "Przelew nie liczy się do przychodów ani wydatków.")
         return item
+
+    def selection_summary(self):
+        return self.tree.selection_summary()
+
+    def selected_entries(self):
+        """Rachunki i przelewy ze wszystkich zaznaczonych wierszy."""
+        return [item.data(DATE, ENTRY_ROLE) for item in self.tree.selected_entries()]
 
     def selected_entry(self):
         """Rachunek lub przelew z zaznaczonego wiersza; dzień nie jest operacją."""
@@ -400,22 +420,25 @@ class WalletsTab(QWidget):
         menu.addAction("Edytuj", self.edit_entry)
         if self.selected_entry()[0] == "transaction":
             menu.addAction("Duplikuj", self.duplicate_transaction)
-        menu.addAction("Usuń", self.delete_entry)
+        count = len(self.selected_entries())
+        menu.addAction(f"Usuń zaznaczone ({count})" if count > 1 else "Usuń", self.delete_entry)
         return menu
 
     def _show_entry_menu(self, position):
-        item = self.tree.itemAt(position)
-        if item is None:
+        if self.tree.show_menu_at(position) is None:
             return
-        self.tree.setCurrentItem(item)
         menu = self._entry_menu()
         if menu:
             menu.exec(self.tree.viewport().mapToGlobal(position))
 
     def _update_entry_buttons(self, *_):
         entry = self.selected_entry()
+        count = len(self.selected_entries())
         self.edit_entry_button.setEnabled(entry is not None)
-        self.delete_entry_button.setEnabled(entry is not None)
+        self.delete_entry_button.setEnabled(entry is not None or count > 0)
+        self.delete_entry_button.setText(
+            f"Usuń zaznaczone ({count})" if count > 1 else "Usuń operację"
+        )
         self.duplicate_button.setEnabled(entry is not None and entry[0] == "transaction")
 
     # Działania
@@ -524,16 +547,42 @@ class WalletsTab(QWidget):
             self.refresh()
 
     def delete_entry(self):
-        entry = self.selected_entry()
+        entries = self.selected_entries()
+        if len(entries) > 1:
+            self._delete_entries(entries)
+            return
+        entry = self.selected_entry() or (entries[0] if entries else None)
         if entry is None:
             return
         kind, entry_id = entry
         if kind == "transaction":
             if common.confirm(
-                self, f"Usunąć transakcję „{self.tree.currentItem().text(DESCRIPTION)}”?"
+                self, f"Usunąć transakcję „{self._entry_description(entry)}”?"
             ):
                 delete_transaction(self.db, entry_id)
                 self.refresh()
         elif common.confirm(self, "Usunąć ten przelew? Zmieni to saldo obu portfeli."):
             delete_transfer(self.db, entry_id)
             self.refresh()
+
+    def _entry_description(self, entry):
+        for item in [self.tree.currentItem(), *self.tree.selected_entries()]:
+            if item is not None and item.data(DATE, ENTRY_ROLE) == entry:
+                return item.text(DESCRIPTION)
+        return ""
+
+    def _delete_entries(self, entries):
+        transfers = sum(1 for kind, _id in entries if kind == "transfer")
+        question = f"Usunąć zaznaczone operacje ({len(entries)})?"
+        if transfers:
+            question += (
+                f" Wśród nich są przelewy ({transfers}), więc zmieni się saldo obu portfeli."
+            )
+        if not common.confirm(self, question):
+            return
+        for kind, entry_id in entries:
+            if kind == "transaction":
+                delete_transaction(self.db, entry_id)
+            else:
+                delete_transfer(self.db, entry_id)
+        self.refresh()

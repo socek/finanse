@@ -4,11 +4,14 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QMessageBox
 
+from ..money import format_money, format_totals
 from .themes import color_override
 
 
 NO_CATEGORY_NAME = "Bez kategorii"
 NO_CATEGORY_HINT = "Można tak zostawić, ale kategoria ułatwia czytanie raportów."
+# Kwoty wiersza do sumy zaznaczenia: lista par (waluta, grosze ze znakiem).
+SUM_ROLE = Qt.ItemDataRole.UserRole + 7
 
 
 def _message_box(parent, icon, text):
@@ -18,15 +21,62 @@ def _message_box(parent, icon, text):
     return box
 
 
+def add_amounts(totals, amounts):
+    """Dopisuje do sum według walut pary (waluta, grosze); brak kwot niczego nie zmienia."""
+    for currency, cents in amounts or ():
+        totals[currency] = totals.get(currency, 0) + cents
+    return totals
+
+
+def signed_totals(totals):
+    """Sumy ze znakiem, jak kwoty na listach, np. "−12,00 PLN, +5,00 EUR"."""
+    parts = []
+    for currency, cents in sorted(totals.items()):
+        sign = "−" if cents < 0 else "+" if cents > 0 else ""
+        parts.append(f"{sign}{format_money(abs(cents), currency)}")
+    return ", ".join(parts)
+
+
+def selection_summary(count, totals, label="Suma", formatter=signed_totals):
+    """Tekst paska stanu; pojedynczy wiersz nie potrzebuje sumy, więc wtedy jest pusty."""
+    if count < 2:
+        return ""
+    text = f"Zaznaczone: {count}"
+    if totals:
+        text += f" · {label}: {formatter(totals)}"
+    return text
+
+
+def selected_rows(table):
+    """Numery zaznaczonych wierszy tabeli, od góry."""
+    return sorted({index.row() for index in table.selectionModel().selectedIndexes()})
+
+
+def multi_select(view):
+    """Zaznaczanie wielu wierszy z Ctrl i Shift."""
+    view.setSelectionMode(view.SelectionMode.ExtendedSelection)
+
+
+def keep_selection_current(view, index):
+    """Ustawia bieżący wiersz bez zmiany zaznaczenia, np. przed menu kilku wierszy."""
+    view.selectionModel().setCurrentIndex(index, view.selectionModel().SelectionFlag.NoUpdate)
+
+
 def attach_row_menu(table, build_menu):
-    """Prawy przycisk zaznacza wiersz tabeli i pokazuje menu z build_menu."""
+    """Prawy przycisk zaznacza wiersz tabeli i pokazuje menu z build_menu.
+
+    Kliknięcie w wiersz należący do zaznaczenia zostawia całe zaznaczenie.
+    """
 
     def show(position):
         # rowAt, bo komórki z przyciskiem nie mają elementu, który znalazłoby itemAt.
         row = table.rowAt(position.y())
         if row < 0:
             return
-        table.setCurrentCell(row, 0)
+        if row in selected_rows(table):
+            keep_selection_current(table, table.model().index(row, 0))
+        else:
+            table.setCurrentCell(row, 0)
         build_menu().exec(table.viewport().mapToGlobal(position))
 
     table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

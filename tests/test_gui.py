@@ -11,7 +11,7 @@ from test_csv_import import BANK_CSV
 
 from finanse import __version__
 from finanse.budgets import set_budgets
-from finanse.categories import create_category
+from finanse.categories import create_category, list_categories
 from finanse.gui import common
 from finanse.gui.categories_tab import CategoriesTab
 from finanse.gui.dialogs import (
@@ -33,7 +33,8 @@ from finanse.gui.recurring_tab import (
     REMAINING,
     RecurringTab,
 )
-from finanse.gui.reports_tab import ReportsTab, _copy_amount
+from finanse.gui.day_list import KEY_ROLE
+from finanse.gui.reports_tab import AMOUNT_ROLE, ReportsTab, _copy_amount
 from finanse.gui.wallets_tab import WalletsTab
 from finanse.recurring import create_recurring, get_recurring, list_recurring, set_suspended
 from finanse.tags import list_tags, set_transaction_tags
@@ -2812,3 +2813,169 @@ def test_tag_row_menu(db, errors, monkeypatch):
     assert shown == ["Zmień nazwę", "Usuń"]
     _choose(panel, "Usuń")
     assert list_tags(db) == []
+
+
+def _select(view, items):
+    """Zaznacza kilka wierszy naraz, jak Ctrl z kliknięciem."""
+    view.clearSelection()
+    for item in items:
+        item.setSelected(True)
+
+
+def _entries(tab):
+    return [
+        tab.tree.topLevelItem(d).child(i)
+        for d in range(tab.tree.topLevelItemCount())
+        for i in range(tab.tree.topLevelItem(d).childCount())
+    ]
+
+
+def test_selected_operations_are_summed_in_the_status_bar(db, errors):
+    wallet = create_wallet(db, "A")
+    other = create_wallet(db, "B", "EUR")
+    add(db, wallet, price="10", on="2026-11-05")
+    add(db, wallet, price="2,50", on="2026-11-04")
+    salary = [{"name": "Pensja", "quantity": "1", "price": "100", "category": None}]
+    create_transaction(db, wallet, "income", "2026-11-03", "Pensja", salary)
+    create_transfer(db, wallet, other, "2026-11-02", "", "8", "2")
+    window = MainWindow(db)
+    tab = window.wallets
+    _check(tab, "B\n2,00\xa0EUR", False)
+    entries = _entries(tab)
+    assert window.selection_label.text() == ""
+
+    _select(tab.tree, entries[:2])
+    assert window.selection_label.text() == "Zaznaczone: 2 · Suma: −12,50\xa0PLN"
+    assert tab.delete_entry_button.text() == "Usuń zaznaczone (2)"
+
+    # Przelew do niewybranego portfela liczy się jak wydatek.
+    _select(tab.tree, entries)
+    assert window.selection_label.text() == "Zaznaczone: 4 · Suma: +79,50\xa0PLN"
+
+    # Przelew między wybranymi portfelami w różnych walutach zmienia obie sumy.
+    _check(tab, "B\n2,00\xa0EUR", True)
+    _select(tab.tree, _entries(tab)[2:])
+    assert window.selection_label.text() == "Zaznaczone: 2 · Suma: +2,00\xa0EUR, +92,00\xa0PLN"
+
+    # Zaznaczony dzień liczy się ze wszystkimi pozycjami, ale nie daje się usunąć.
+    _select(tab.tree, [tab.tree.topLevelItem(0), tab.tree.topLevelItem(1)])
+    assert window.selection_label.text() == "Zaznaczone: 2 · Suma: −12,50\xa0PLN"
+    assert tab.selected_entries() == []
+
+    _select(tab.tree, _entries(tab)[:1])
+    assert window.selection_label.text() == ""
+    window.close()
+
+
+def test_delete_removes_every_selected_operation(db, errors):
+    wallet = create_wallet(db, "A")
+    other = create_wallet(db, "B")
+    add(db, wallet, on="2026-11-05")
+    add(db, wallet, on="2026-11-04")
+    keep = add(db, wallet, on="2026-11-03")
+    create_transfer(db, wallet, other, "2026-11-02", "", "1")
+    tab = WalletsTab(db)
+    entries = _entries(tab)
+    _select(tab.tree, [entries[0], entries[1], entries[3]])
+    tab.delete_entry()
+    assert [entry.data(0, KEY_ROLE) for entry in _entries(tab)] == [("transaction", keep)]
+
+
+def test_right_click_keeps_the_selection(db, errors, monkeypatch):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-11-05")
+    add(db, wallet, on="2026-11-04")
+    tab = WalletsTab(db)
+    tab.resize(900, 600)
+    tab.show()
+    shown = _record_menus(monkeypatch, "wallets_tab")
+    entries = _entries(tab)
+    _select(tab.tree, entries)
+    tab._show_entry_menu(tab.tree.visualItemRect(entries[1]).center())
+    assert shown == ["Edytuj", "Duplikuj", "Usuń zaznaczone (2)"]
+    assert len(tab.selected_entries()) == 2
+    assert tab.selected_entry() == entries[1].data(0, KEY_ROLE)
+    tab.close()
+
+
+def test_selected_products_are_summed(db, errors):
+    wallet = create_wallet(db, "A")
+    create_transaction(db, wallet, "expense", "2026-11-05", "Zakupy", [
+        {"name": "Chleb", "quantity": "2", "price": "3", "category": None},
+        {"name": "Mleko", "quantity": "1", "price": "4,20", "category": None},
+    ])  # fmt: skip
+    tab = ProductsTab(db)
+    _select(tab.tree, _entries(tab))
+    assert tab.selection_summary() == "Zaznaczone: 2 · Suma: −10,20\xa0PLN"
+
+
+def test_selected_recurring_are_summed_and_deleted_together(db, errors):
+    wallet = create_wallet(db, "A")
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "1000"))
+    create_recurring(db, wallet, "income", "Najem", rows=priced("Najem", "300"))
+    create_recurring(db, wallet, "expense", "Prąd")
+    tab = RecurringTab(db)
+    rows = [tab.table.item(row, DESCRIPTION) for row in range(3)]
+    _select(tab.table, rows)
+    assert tab.selection_summary() == "Zaznaczone: 3 · Suma: −700,00\xa0PLN"
+    assert tab.delete_button.text() == "Usuń zaznaczone (3)"
+
+    _select(tab.table, [item for item in rows if item.text() != "Najem"])
+    tab.delete()
+    assert [item["description"] for item in list_recurring(db)] == ["Najem"]
+
+
+def test_selected_categories_sum_budgets_and_delete_only_empty(db, errors):
+    wallet = create_wallet(db, "A")
+    home = create_category(db, "Lokal")
+    food = create_category(db, "Przekąski")
+    create_category(db, "Pusta")
+    set_budgets(db, home, {"PLN": "1000", "EUR": "50"})
+    set_budgets(db, food, {"PLN": "200,50"})
+    create_recurring(db, wallet, "expense", "Czynsz", rows=priced("Czynsz", "10", home))
+    window = MainWindow(db)
+    window.tabs.setCurrentWidget(window.categories)
+    tab = window.categories
+    row_of = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
+    _select(tab.table, [tab.table.item(row_of[n], 0) for n in ("Lokal", "Przekąski")])
+    assert window.selection_label.text() == (
+        "Zaznaczone: 2 · Suma budżetów: +50,00\xa0EUR, +1\xa0200,50\xa0PLN"
+    )
+    assert not tab.delete_button.isEnabled()
+    tab.delete()
+    assert "Niepuste: Lokal." in errors[-1]
+
+    _select(tab.table, [tab.table.item(row_of[n], 0) for n in ("Przekąski", "Pusta")])
+    assert tab.delete_button.isEnabled()
+    tab.delete()
+    names = {c["name"] for c in list_categories(db)}
+    assert "Lokal" in names and not names & {"Przekąski", "Pusta"}
+    window.close()
+
+
+def test_selected_tags_are_deleted_together(db, errors):
+    wallet = create_wallet(db, "A")
+    set_transaction_tags(db, add(db, wallet), ["Wakacje", "Praca", "Dom"])
+    tab = CategoriesTab(db).tags
+    row_of = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
+    _select(tab.table, [tab.table.item(row_of[n], 0) for n in ("Wakacje", "Dom")])
+    assert tab.delete_button.text() == "Usuń zaznaczone (2)"
+    tab.delete()
+    assert [tag["name"] for tag in list_tags(db)] == ["Praca"]
+
+
+def test_selected_report_amounts_are_summed_in_one_table(db, errors):
+    wallet = create_wallet(db, "A")
+    add(db, wallet, on="2026-10-05", price="10")
+    add(db, wallet, on="2026-09-05", price="2,50")
+    tab = ReportsTab(db)
+    tab.show_month("2026-10")
+    tab.table_button.setChecked(True)
+    table = tab.trend_table
+    rows = [r for r in range(table.rowCount()) if table.item(r, 2).data(AMOUNT_ROLE)]
+    _select(table, [table.item(r, column) for r in rows for column in (0, 2)])
+    assert tab.selection_summary() == "Zaznaczone: 2 · Suma: 12,50\xa0PLN"
+
+    tab.wallets_table.item(0, 1).setSelected(True)
+    assert not table.selectedItems()
+    assert tab.selection_summary() == ""

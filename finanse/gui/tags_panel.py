@@ -40,10 +40,11 @@ class TagsPanel(QWidget):
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        common.multi_select(self.table)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self.rename())
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        self.table.itemSelectionChanged.connect(self._update_buttons)
         common.attach_row_menu(self.table, self._row_menu)
         self.delete_shortcut = shortcuts.bind(
             "delete_selected", self.table, self.delete, Qt.ShortcutContext.WidgetShortcut
@@ -90,15 +91,29 @@ class TagsPanel(QWidget):
         count = int(self.table.item(row, 1).text())
         return item.data(Qt.ItemDataRole.UserRole), item.text(), count
 
+    def _delete_rows(self):
+        rows = common.selected_rows(self.table)
+        if len(rows) > 1:
+            return rows
+        current = self.table.currentRow()
+        return [current] if current >= 0 else []
+
+    def _delete_label(self, short):
+        count = len(self._delete_rows())
+        if count > 1:
+            return f"Usuń zaznaczone ({count})"
+        return "Usuń" if short else "Usuń tag"
+
     def _update_buttons(self):
         selected = self.table.currentRow() >= 0
         self.rename_button.setEnabled(selected)
-        self.delete_button.setEnabled(selected)
+        self.delete_button.setEnabled(bool(self._delete_rows()))
+        self.delete_button.setText(self._delete_label(short=False))
 
     def _row_menu(self):
         menu = QMenu(self)
         menu.addAction("Zmień nazwę", self.rename)
-        menu.addAction("Usuń", self.delete)
+        menu.addAction(self._delete_label(short=True), self.delete)
         return menu
 
     def rename(self):
@@ -118,6 +133,14 @@ class TagsPanel(QWidget):
         self.refresh()
 
     def delete(self):
+        rows = self._delete_rows()
+        if len(rows) > 1:
+            question = f"Usunąć zaznaczone tagi ({len(rows)})? Same transakcje zostaną."
+            if common.confirm(self, question):
+                for row in rows:
+                    delete_tag(self.db, self.table.item(row, 0).data(Qt.ItemDataRole.UserRole))
+                self.refresh()
+            return
         tag_id, name, count = self._selected()
         if tag_id is None:
             return

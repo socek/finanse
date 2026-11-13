@@ -31,6 +31,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - historia zmian danych, automatyczna kopia bazy przy każdym uruchomieniu i przywracanie kopii z poziomu aplikacji
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
+- zaznaczanie wielu wierszy z Ctrl i Shift, z liczbą i sumą zaznaczonych pozycji na pasku
+  stanu oraz usuwaniem kilku pozycji naraz
 - pasek menu ze wszystkimi działaniami i pięć zakładek z danymi; historia, pliki, ustawienia
   i informacje o programie otwierają się w osobnych oknach
 - skróty klawiszowe do większości działań, zmieniane w oknie **Edycja → Ustawienia** (Ctrl+,)

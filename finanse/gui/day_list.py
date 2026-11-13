@@ -345,6 +345,40 @@ class DayTree(QTreeWidget):
         self.flash_timer = QTimer(self)
         self.flash_timer.timeout.connect(self._flash_tick)
         self.setItemDelegate(_FlashDelegate(self))
+        common.multi_select(self)
+
+    def selected_entries(self, with_days=False):
+        """Zaznaczone pozycje od góry.
+
+        Z `with_days` zaznaczony dzień oznacza wszystkie jego pozycje, co wystarcza do sumy.
+        Działania, np. usuwanie, dotyczą tylko pozycji zaznaczonych wprost.
+        """
+        entries = []
+        for day_index in range(self.topLevelItemCount()):
+            day = self.topLevelItem(day_index)
+            for index in range(day.childCount()):
+                child = day.child(index)
+                if child.isSelected() or (with_days and day.isSelected()):
+                    entries.append(child)
+        return entries
+
+    def selection_summary(self):
+        totals = {}
+        entries = self.selected_entries(with_days=True)
+        for item in entries:
+            common.add_amounts(totals, item.data(0, common.SUM_ROLE))
+        return common.selection_summary(len(entries), totals)
+
+    def show_menu_at(self, position):
+        """Bieżącym staje się kliknięty wiersz; zaznaczenie zostaje, jeśli go obejmuje."""
+        item = self.itemAt(position)
+        if item is None:
+            return None
+        if item.isSelected():
+            common.keep_selection_current(self, self.indexFromItem(item))
+        else:
+            self.setCurrentItem(item)
+        return item
 
     def drawBranches(self, painter, rect, index):
         """Pole wcięcia należy do wiersza, więc dostaje jego tło."""

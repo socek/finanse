@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..money import format_money, format_money_input
+from ..money import format_money, format_money_input, format_totals
 from ..reports import build_report
 from ..wallets import list_wallets
 from . import common, shortcuts
@@ -95,6 +95,7 @@ class ReportTable(QTableWidget):
                 cents, currency = cell
                 item = QTableWidgetItem(format_money(cents, currency))
                 item.setData(AMOUNT_ROLE, cents)
+                item.setData(common.SUM_ROLE, [(currency, cents)])
                 item.setTextAlignment(RIGHT)
             else:
                 item = QTableWidgetItem(cell)
@@ -120,6 +121,15 @@ class ReportTable(QTableWidget):
         for row, _column, item in cells:
             rows.setdefault(row, []).append(self.copy_text(item))
         return "\n".join("\t".join(texts) for texts in rows.values())
+
+    def selection_summary(self):
+        """Suma zaznaczonych kwot tak, jak je widać w tabeli, czyli wydatki bez minusa."""
+        amounts = [item.data(common.SUM_ROLE) for item in self.selectedItems()]
+        amounts = [amount for amount in amounts if amount]
+        totals = {}
+        for amount in amounts:
+            common.add_amounts(totals, amount)
+        return common.selection_summary(len(amounts), totals, formatter=format_totals)
 
     def copy_selection(self):
         text = self.selection_text()
@@ -335,9 +345,12 @@ def _clear_grid(grid):
 
 
 class ReportsTab(QWidget):
+    selection_changed = Signal()
+
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
+        self.selection_table = None  # tabela, w której ostatnio zmieniło się zaznaczenie
         self.currency = ""
         self.excluded = set()  # dzięki temu nowy portfel jest od razu w raporcie
         self.listed_wallets = None
@@ -481,6 +494,13 @@ class ReportsTab(QWidget):
         self.table_button.toggled.connect(self._toggle_table)
         self.trend_table = ReportTable(3, ["Miesiąc", "Przychody", "Wydatki"])
         self.trend_table.hide()
+        self.report_tables = (
+            self.wallets_table, self.vat_table, self.tags_table, self.trend_table,
+        )  # fmt: skip
+        for table in self.report_tables:
+            table.itemSelectionChanged.connect(
+                lambda table=table: self._table_selection_changed(table)
+            )
 
         hint = QLabel("Raporty nie uwzględniają przelewów między portfelami.")
 
@@ -549,6 +569,22 @@ class ReportsTab(QWidget):
             self.next_button,
         )
         self.refresh()
+
+    def _table_selection_changed(self, table):
+        """Suma dotyczy jednej tabeli, więc zaznaczenie w niej czyści pozostałe."""
+        if table.selectedItems():
+            self.selection_table = table
+            for other in self.report_tables:
+                if other is not table:
+                    other.blockSignals(True)
+                    other.clearSelection()
+                    other.blockSignals(False)
+                    other.viewport().update()
+        self.selection_changed.emit()
+
+    def selection_summary(self):
+        table = self.selection_table
+        return table.selection_summary() if table is not None else ""
 
     def previous_month(self):
         self.previous_button.click()

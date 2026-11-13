@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHeaderView,
+    QLabel,
     QMainWindow,
     QTableWidget,
     QTableWidgetItem,
@@ -106,6 +107,14 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(lambda _: self.show_due_count(count_due(db)))
         self.show_due_count(count_due(db))
         self.setCentralWidget(self.tabs)
+
+        # Liczba i suma zaznaczonych pozycji widocznej zakładki.
+        self.selection_label = QLabel()
+        self.statusBar().addPermanentWidget(self.selection_label)
+        for index in range(self.tabs.count()):
+            self.tabs.widget(index).selection_changed.connect(self.show_selection_summary)
+        self.tabs.currentChanged.connect(lambda _: self.show_selection_summary())
+        self.show_selection_summary()
 
         # Rzadziej używane strony mają własne okna, otwierane z menu.
         self.history = HistoryTab(db)
@@ -302,6 +311,8 @@ class MainWindow(QMainWindow):
             entry = self.wallets.selected_entry()
             if action == "duplicate":
                 return entry is not None and entry[0] == "transaction"
+            if action == "delete":
+                return entry is not None or bool(self.wallets.selected_entries())
             return entry is not None
         if tab is self.products:
             return action in ("edit", "duplicate") and self._has_product()
@@ -364,6 +375,9 @@ class MainWindow(QMainWindow):
     def select_period(self, key):
         combo = self.reports.period_combo
         combo.setCurrentIndex(combo.findData(key))
+
+    def show_selection_summary(self):
+        self.selection_label.setText(self.tabs.currentWidget().selection_summary())
 
     def show_due_count(self, count):
         index = self.tabs.indexOf(self.recurring)
