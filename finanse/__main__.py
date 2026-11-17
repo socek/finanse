@@ -64,6 +64,7 @@ def main(argv=None):
     title_bar.install(app, settings.get(title_bar.SETTING, title_bar.default_enabled()))
     window = MainWindow(db)
     window.show()
+    window.upload_on_startup()
     try:
         return app.exec()
     finally:

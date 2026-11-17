@@ -18,6 +18,9 @@
   pozycji i ich sumę według walut; zaznaczony dzień liczy się ze wszystkimi swoimi pozycjami.
 - Usuwanie kilku zaznaczonych operacji, transakcji cyklicznych, pustych kategorii lub tagów
   naraz, po jednym potwierdzeniu.
+- Kopie bazy na Google Drive: połączenie z kontem Google w Ustawieniach, wysyłka z menu
+  **Plik** lub przy każdym uruchomieniu, w tle, do folderu „Finanse – kopie”, w którym zostaje
+  30 najnowszych kopii. Aplikacja widzi na Dysku tylko pliki, które sama utworzyła.
 
 ## 0.2 (2026-11-07)
 

@@ -29,6 +29,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - import wyciągów bankowych z plików CSV z ochroną przed duplikatami i regułami, które
   nadają kategorię, nazwę produktu i tagi według opisu
 - historia zmian danych, automatyczna kopia bazy przy każdym uruchomieniu i przywracanie kopii z poziomu aplikacji
+- kopie bazy na Google Drive, ręcznie z menu **Plik** albo przy każdym uruchomieniu
 - motywy kolorystyczne: systemowy, jasny, ciemny, sepia i kolorowy, zapisywane w `settings.json`
   obok bazy
 - zaznaczanie wielu wierszy z Ctrl i Shift, z liczbą i sumą zaznaczonych pozycji na pasku
@@ -63,6 +64,31 @@ może dodać własny do każdego okna: głównego, formularzy, komunikatów i za
 pokazuje tytuł okna i przycisk zamknięcia, a przeciągnięcie go przesuwa pływające okno.
 Domyślnie jest włączony, gdy `XDG_CURRENT_DESKTOP` wskazuje taki pulpit. Przełącznik
 w menu **Widok** i w oknie ustawień zapisuje wybór w `settings.json`.
+
+## Kopia na Google Drive
+
+Aplikacja wysyła kopię bazy na Dysk Google przez API, w tle, do folderu „Finanse – kopie”,
+i zostawia tam 30 najnowszych kopii. Ma dostęp tylko do plików, które sama utworzyła
+(zakres `drive.file`), nie widzi reszty Dysku.
+
+Google wymaga własnego klienta OAuth, więc trzeba go raz utworzyć:
+
+1. W [Google Cloud Console](https://console.cloud.google.com/) utwórz projekt i włącz
+   w nim **Google Drive API** (*APIs & Services → Library*).
+2. W *Google Auth Platform* (ekran zgody OAuth) wybierz odbiorców **External** i dodaj
+   swój adres jako użytkownika testowego. Aby token nie wygasał po 7 dniach, opublikuj
+   aplikację (*Publish app*); weryfikacja nie jest potrzebna do własnego użytku.
+3. W *Clients* utwórz klienta typu **Desktop app** i pobierz jego plik JSON.
+4. W aplikacji otwórz **Edycja → Ustawienia**, kliknij **Wczytaj z pliku…** przy Client ID,
+   a potem **Połącz z Google…** i zgódź się na dostęp w przeglądarce.
+
+Kopię wysyła **Plik → Wyślij kopię na Google Drive** albo przycisk w ustawieniach.
+Opcja „Wysyłaj kopię przy każdym uruchomieniu” robi to sama, a wynik pokazuje na pasku stanu.
+Kopię z Dysku przywraca się, pobierając plik i wybierając **Plik → Przywróć kopię bazy z pliku…**.
+
+Dane klienta i token są w pliku `gdrive.json` obok bazy, z prawami tylko dla właściciela.
+Token pozwala tylko na pliki aplikacji, ale chroń go jak samą bazę. **Rozłącz** w ustawieniach
+usuwa token z pliku; dostęp można też cofnąć na stronie konta Google.
 
 ## Wersja i historia zmian
 

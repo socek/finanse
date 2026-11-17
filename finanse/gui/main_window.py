@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .. import gdrive
 from ..recurring import count_due
 from ..settings import load_settings
 from ..storage import database_path
@@ -125,6 +126,14 @@ class MainWindow(QMainWindow):
         self.files_dialog = PageDialog(self.files, "Kopie i pliki danych", (760, 520), self)
         self.settings_dialog = PageDialog(self.settings, "Ustawienia", (720, 680), self)
         self.about_dialog = PageDialog(self.about, "O programie", (720, 640), self)
+        self.settings.drive_upload.finished.connect(
+            lambda name: self.statusBar().showMessage(f"Wysłano kopię {name} na Google Drive.", 10000)
+        )
+        self.settings.drive_upload.failed.connect(
+            lambda message: self.statusBar().showMessage(
+                f"Nie udało się wysłać kopii na Google Drive: {message}", 30000
+            )
+        )
 
         self.commands = {
             "new_transaction": self.new_transaction,
@@ -183,6 +192,8 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self._item(file_menu, "Kopie i pliki danych…", self.files_dialog.open_page)
         self._item(file_menu, "Przywróć kopię bazy z pliku…", self.files.restore_from_file)
+        self._item(file_menu, "Wyślij kopię na Google Drive", self.upload_to_drive,
+                   enabled=self._can_upload_to_drive)  # fmt: skip
         file_menu.addSeparator()
         self._item(file_menu, "Zakończ", act["quit"], "quit")
 
@@ -322,6 +333,9 @@ class MainWindow(QMainWindow):
             return action in ("edit", "delete") and self.categories.table.currentRow() >= 0
         return False
 
+    def _can_upload_to_drive(self):
+        return self.settings.drive_ready() and not self.settings.drive_upload.running()
+
     def _has_product(self):
         return self.tabs.currentWidget() is self.products and (
             self.products.selected_transaction() is not None
@@ -357,6 +371,15 @@ class MainWindow(QMainWindow):
             self.recurring.delete()
         elif tab is self.categories:
             self.categories.delete()
+
+    def upload_to_drive(self, interactive=True):
+        if self.settings.upload_to_drive(interactive):
+            self.statusBar().showMessage("Wysyłanie kopii na Google Drive…")
+
+    def upload_on_startup(self):
+        """Kopia na Dysk przy starcie, jeśli włączona; wynik tylko na pasku stanu."""
+        if gdrive.load_config(database_path(self.db)).get("auto"):
+            self.upload_to_drive(interactive=False)
 
     def show_forecast(self):
         self.tabs.setCurrentWidget(self.wallets)
