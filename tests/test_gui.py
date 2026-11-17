@@ -100,6 +100,40 @@ def test_transaction_dialog_totals_rows_and_save(db, errors):
     assert saved["rows"][0]["category"] is not None
 
 
+def test_transaction_dialog_tab_selects_whole_field_text(db, errors):
+    dialog = TransactionDialog(db, get_wallet(db, create_wallet(db, "A")))
+    dialog.show()
+    assert QTest.qWaitForWindowActive(dialog)
+    table = dialog.table
+    for column, text in ((dialog.NAME, "Chleb"), (dialog.QUANTITY, "2"), (dialog.PRICE, "3,50")):
+        table.cellWidget(0, column).setText(text)
+    table.cellWidget(0, dialog.CATEGORY).setFocus()
+
+    def press(key, modifier=Qt.KeyboardModifier.NoModifier):
+        assert QApplication.focusWidget() is not None
+        QTest.keyClick(QApplication.focusWidget(), key, modifier)
+        QApplication.processEvents()
+        return QApplication.focusWidget()
+
+    for column in (dialog.QUANTITY, dialog.PRICE, dialog.VALUE):
+        field = press(Qt.Key.Key_Tab)
+        assert field is table.cellWidget(0, column)
+        assert field.selectedText() == field.text() != ""
+    press(Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    press(Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    field = press(Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    assert field is table.cellWidget(0, dialog.CATEGORY)
+    field = press(Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    assert field is table.cellWidget(0, dialog.NAME)
+    assert field.selectedText() == "Chleb"
+
+    # Kliknięcie myszą tylko ustawia kursor.
+    price = table.cellWidget(0, dialog.PRICE)
+    QTest.mouseClick(price, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    assert price.hasFocus() and price.selectedText() == ""
+
+
 def test_transaction_dialog_edits_existing(db, errors):
     wallet_id = create_wallet(db, "A")
     transaction = add(db, wallet_id)

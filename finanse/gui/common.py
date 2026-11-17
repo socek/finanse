@@ -1,6 +1,6 @@
 """Drobne elementy wspólne dla okien aplikacji."""
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QDateEdit, QLabel, QMessageBox
 
@@ -81,6 +81,29 @@ def attach_row_menu(table, build_menu):
 
     table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     table.customContextMenuRequested.connect(show)
+
+
+class _SelectAllOnFocus(QObject):
+    # Tab w tabeli przenosi fokus z powodem "inny", a myszą kursor ma trafić w kliknięte
+    # miejsce. Po zamknięciu podpowiedzi lub przełączeniu okna zaznaczenie zostaje jak było.
+    REASONS = (
+        Qt.FocusReason.TabFocusReason,
+        Qt.FocusReason.BacktabFocusReason,
+        Qt.FocusReason.ShortcutFocusReason,
+        Qt.FocusReason.OtherFocusReason,
+    )
+
+    def eventFilter(self, field, event):
+        if event.type() == QEvent.Type.FocusIn and event.reason() in self.REASONS:
+            # Po obsłudze zdarzenia, bo pole samo ustawia wtedy kursor.
+            QTimer.singleShot(0, field, field.selectAll)
+        return False
+
+
+def select_all_on_focus(field):
+    """Wejście w pole z klawiatury zaznacza cały tekst, więc wpisanie go zastępuje."""
+    selector = _SelectAllOnFocus(field)
+    field.installEventFilter(selector)
 
 
 def show_errors(parent, errors):

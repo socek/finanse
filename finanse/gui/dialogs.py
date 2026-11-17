@@ -275,6 +275,8 @@ class _ProductRowsMixin:
 
         for field in (quantity, price, value, net_price, net_value):
             field.textEdited.connect(lambda _text, edited=field: _remove_minus(edited))
+        for field in (name, quantity, price, value, net_price, net_value):
+            common.select_all_on_focus(field)
         name.textChanged.connect(self._update_totals)
 
         def suggest(*_):

@@ -21,6 +21,9 @@
 - Kopie bazy na Google Drive: połączenie z kontem Google w Ustawieniach, wysyłka z menu
   **Plik** lub przy każdym uruchomieniu, w tle, do folderu „Finanse – kopie”, w którym zostaje
   30 najnowszych kopii. Aplikacja widzi na Dysku tylko pliki, które sama utworzyła.
+- Przejście Tabem lub Shift+Tab do pól produktu, ilości, ceny i wartości w oknie transakcji
+  zaznacza cały ich tekst, więc wpisanie nowej wartości zastępuje starą. Kliknięcie myszą
+  tylko ustawia kursor.
 
 ## 0.2 (2026-11-07)
 
