@@ -17,6 +17,13 @@ from PySide6.QtWidgets import (
 from ..bank_import import load_file
 from ..errors import ValidationError
 from ..forecast import balance_forecast
+from ..loans import (
+    list_loans,
+    loan_of_transaction,
+    loans_by_transaction,
+    transaction_summary,
+    unlink_transaction,
+)
 from ..money import format_money, format_totals
 from ..transactions import delete_transaction, get_transaction
 from ..transfers import delete_transfer
@@ -44,6 +51,7 @@ from .day_list import (
 from .dialogs import TransactionDialog, TransferDialog, WalletDialog
 from .forecast_dialog import ForecastDialog
 from .import_dialog import ImportDialog
+from .loan_dialogs import LinkLoanDialog, LoanDialog
 
 ENTRY_ROLE = KEY_ROLE
 DATE, DESCRIPTION, WALLET, CATEGORY, AMOUNT = range(5)
@@ -56,6 +64,7 @@ class WalletsTab(QWidget):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
+        self.loan_people = {}  # osoba pożyczki dla powiązanych transakcji z listy
 
         self.wallet_list = WalletList()
         self.wallet_list.checked_changed.connect(self._selection_changed)
@@ -288,6 +297,9 @@ class WalletsTab(QWidget):
         self.summary.setText(text)
         self.summary.setVisible(bool(text))
 
+        self.loan_people = loans_by_transaction(
+            self.db, (e["item"]["id"] for e in entries if e["type"] == "transaction")
+        )
         self.tree.fill(
             tuple(sorted(wallet_ids)),
             group_by_day(entries),
@@ -322,6 +334,9 @@ class WalletsTab(QWidget):
         description = transaction["description"]
         if entry["tags"]:
             description += "  · " + ", ".join(name for _id, name in entry["tags"])
+        person = self.loan_people.get(transaction["id"])
+        if person is not None:
+            description += f"  · pożyczka: {person}"
         item = QTreeWidgetItem(
             [
                 "",
@@ -396,6 +411,7 @@ class WalletsTab(QWidget):
             return None
         menu = QMenu(self)
         menu.addAction("Nowa transakcja", self.create_transaction)
+        menu.addAction("Nowa pożyczka", self.create_loan)
         menu.addAction("Import CSV", self.import_csv)
         menu.addAction("Edytuj portfel", self.edit_wallet)
         menu.addAction("Usuń portfel", self.delete_wallet)
@@ -420,6 +436,10 @@ class WalletsTab(QWidget):
         menu.addAction("Edytuj", self.edit_entry)
         if self.selected_entry()[0] == "transaction":
             menu.addAction("Duplikuj", self.duplicate_transaction)
+            if self.can_unlink_loan():
+                menu.addAction("Odłącz od pożyczki", self.unlink_from_loan)
+            else:
+                menu.addAction("Połącz z pożyczką…", self.link_to_loan)
         count = len(self.selected_entries())
         menu.addAction(f"Usuń zaznaczone ({count})" if count > 1 else "Usuń", self.delete_entry)
         return menu
@@ -500,6 +520,55 @@ class WalletsTab(QWidget):
         key = ("transaction", dialog.transaction_id)
         self.tree.flash(lambda candidate: candidate == key)
         return dialog.transaction_id
+
+    def create_loan(self):
+        """Nowa pożyczka z kwotą w podświetlonym portfelu."""
+        dialog = LoanDialog(self.db, wallet_id=self.wallet_id(), parent=self)
+        if dialog.exec():
+            self.refresh()
+
+    def _selected_transaction_id(self):
+        entry = self.selected_entry()
+        return entry[1] if entry is not None and entry[0] == "transaction" else None
+
+    def can_link_loan(self):
+        transaction_id = self._selected_transaction_id()
+        return transaction_id is not None and loan_of_transaction(self.db, transaction_id) is None
+
+    def can_unlink_loan(self):
+        transaction_id = self._selected_transaction_id()
+        return (
+            transaction_id is not None
+            and loan_of_transaction(self.db, transaction_id) is not None
+        )
+
+    def link_to_loan(self):
+        transaction_id = self._selected_transaction_id()
+        if transaction_id is None:
+            return
+        transaction = transaction_summary(self.db, transaction_id)
+        if not any(loan["currency"] == transaction["currency"] for loan in list_loans(self.db)):
+            common.show_errors(
+                self,
+                [f"Nie ma pożyczek w {transaction['currency']}. Dodaj ją w zakładce Pożyczki."],
+            )
+            return
+        if LinkLoanDialog(self.db, transaction, parent=self).exec():
+            self.refresh()
+
+    def unlink_from_loan(self):
+        transaction_id = self._selected_transaction_id()
+        if transaction_id is None:
+            return
+        loan = loan_of_transaction(self.db, transaction_id)
+        if loan is not None and common.confirm(
+            self,
+            f"Odłączyć transakcję od pożyczki „{loan['person']}”? "
+            "Zostanie w portfelu i wróci do raportów.",
+            "Odłącz",
+        ):
+            unlink_transaction(self.db, transaction_id)
+            self.refresh()
 
     def create_transfer(self):
         if len(list_wallets(self.db)) < 2:

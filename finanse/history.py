@@ -20,6 +20,9 @@ NOUNS = {
     "tags": "tag",
     "transaction_tags": "tag transakcji",
     "import_rules": "regułę importu",
+    "loans": "pożyczkę",
+    "loan_transactions": "transakcję pożyczki",
+    "loan_items": "pozycję pożyczki",
 }
 TITLE_FIELDS = {
     "wallets": "name",
@@ -33,11 +36,16 @@ TITLE_FIELDS = {
     "tags": "name",
     "transaction_tags": "tag_id",
     "import_rules": "pattern",
+    "loans": "person",
+    "loan_transactions": "transaction_id",
+    "loan_items": "loan_id",
 }
 # Tytuł z identyfikatora zamiast z tekstu, np. budżet nazywa się jak jego kategoria.
 TITLE_FORMATTERS = {
     "budgets": lambda value, names: names["categories"].get(value, f"nr {value}"),
     "transaction_tags": lambda value, names: names["tags"].get(value, f"nr {value}"),
+    "loan_transactions": lambda value, names: names["transactions"].get(value, f"nr {value}"),
+    "loan_items": lambda value, names: names["loans"].get(value, f"nr {value}"),
 }
 # Produkty usuwane i dodawane na nowo przy zapisie rachunku nie są prawdziwą zmianą.
 REPLACED_ON_SAVE = ("products", "recurring_products")
@@ -165,13 +173,31 @@ FIELDS = {
         ("currency", "waluta", _plain, "brak"),
         ("amount_cents", "kwota", _money, "brak"),
     ),
+    "loans": (
+        ("direction", "rodzaj", lambda value, _names: {"lent": "udzielona",
+         "borrowed": "zaciągnięta"}.get(value, value), "brak"),
+        ("person", "osoba", _text, "brak"),
+        ("description", "opis", lambda value, _names: f"„{value}”" if value else "brak", "brak"),
+        ("currency", "waluta", _plain, "brak"),
+        ("opened_on", "data", _plain, "brak"),
+        ("initial_cents", "kwota spoza portfeli", _money, "brak"),
+    ),
+    "loan_transactions": (("transaction_id", "transakcja", _transaction, "brak"),),
+    "loan_items": (
+        ("transaction_id", "transakcja", _transaction, "poza portfelami"),
+        ("role", "rola", lambda value, _names: {"principal": "pożyczenie",
+         "repayment": "spłata"}.get(value, value), "z transakcji"),
+        ("occurred_on", "data", _plain, "z transakcji"),
+        ("amount_cents", "kwota", _money, "z transakcji"),
+        ("description", "opis", lambda value, _names: f"„{value}”" if value else "brak", "brak"),
+    ),
 }
 
 
 def _names(db):
-    """Nazwy portfeli, kategorii, tagów i opisy transakcji, także usuniętych, z dziennika."""
+    """Nazwy portfeli, kategorii, tagów, osoby pożyczek i opisy transakcji, także usuniętych."""
     columns = {"wallets": "name", "categories": "name", "tags": "name",
-               "transactions": "description"}  # fmt: skip
+               "transactions": "description", "loans": "person"}  # fmt: skip
     names = {table: {} for table in columns}
     for table, known in names.items():
         column = columns[table]
@@ -209,6 +235,8 @@ def _is_plain_default(field, values):
         return values.get("period_unit") is None
     if field[0] == "suspended":
         return not values.get("suspended")
+    if values.get("transaction_id") is not None and values.get(field[0]) in (None, ""):
+        return True  # pozycja pożyczki z transakcją bierze datę, rolę i kwotę z niej
     return field[0] == "wallet_type" and values.get("wallet_type") == "plain"
 
 

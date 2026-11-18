@@ -20,6 +20,8 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
 - duplikowanie transakcji: nowa transakcja z kopią produktów, opisu i portfela
 - transakcje cykliczne opłacane jednym przyciskiem, z opcjonalnymi produktami, licznikiem
   i terminem płatności, z wyróżnieniem zaległych i zbliżających się płatności
+- pożyczki udzielone i zaciągnięte, złożone z pozycji (kolejnych pożyczonych kwot i spłat),
+  w portfelach lub poza nimi, ze spłatą całości lub części jednym przyciskiem
 - prognoza salda na koniec miesiąca lub wybrany dzień, z płatności cyklicznych i operacji
   wpisanych z późniejszą datą
 - raporty za miesiąc, rok lub dowolny zakres dat z wybranych portfeli jednej waluty:
@@ -34,7 +36,7 @@ więc dostęp do danych chronią tylko uprawnienia do pliku.
   obok bazy
 - zaznaczanie wielu wierszy z Ctrl i Shift, z liczbą i sumą zaznaczonych pozycji na pasku
   stanu oraz usuwaniem kilku pozycji naraz
-- pasek menu ze wszystkimi działaniami i pięć zakładek z danymi; historia, pliki, ustawienia
+- pasek menu ze wszystkimi działaniami i sześć zakładek z danymi; historia, pliki, ustawienia
   i informacje o programie otwierają się w osobnych oknach
 - skróty klawiszowe do większości działań, zmieniane w oknie **Edycja → Ustawienia** (Ctrl+,)
 - własny pasek tytułowy w każdym oknie, dla menedżerów okien bez dekoracji, np. Hyprland
@@ -174,6 +176,7 @@ Testy okien działają bez ekranu, na platformie Qt `offscreen`.
 - `budgets` – miesięczne limity wydatków kategorii w danej walucie
 - `tags`, `transaction_tags` – tagi i ich przypisanie do transakcji
 - `import_rules` – reguły importu wyciągów
+- `loans`, `loan_items` – pożyczki i ich pozycje: pożyczenia i spłaty
 - `operations`, `change_log` – dziennik zmian
 
 W portfelu z VAT wartość produktu to kwota brutto, od której zależą saldo i raporty, a netto
@@ -188,6 +191,22 @@ wraca do pierwotnego dnia, np. 31 stycznia, 28 lutego, 31 marca. Zakładka pokaz
 w nazwie liczbę płatności po terminie lub na dzisiaj, a na liście wyróżnia zaległe
 oraz te z terminem w ciągu 7 dni. Przycisk **Zawieś** wyłącza transakcję z sumy, prognozy
 i liczby płatności po terminie, a jej opis i termin są wyszarzone, a termin stoi do czasu **Wznów**.
+
+Pożyczka jest udzielona (pożyczasz komuś) albo zaciągnięta (ktoś pożycza tobie), ma walutę
+i składa się z pozycji: pożyczeń i spłat, np. 100 zł, potem kolejne 50 zł i spłata 30 zł.
+Lista pozycji pokazuje, ile zostało po każdej z nich. Pozycja jest poza portfelami, z własną
+datą i kwotą, np. gotówka albo pożyczka sprzed korzystania z aplikacji, albo jest transakcją
+w portfelu i wtedy bierze datę, kwotę i rolę z niej: przy udzielonej wydatek to pożyczenie,
+a przychód spłata, przy zaciągniętej odwrotnie. Taką pozycję zmienia się w portfelu, a stan
+pożyczki zmienia się od razu. Nowa pożyczka ma pierwszą pozycję z pożyczoną kwotą, kolejne
+dodaje **Pożycz więcej…**, a **Spłać…** dodaje spłatę z wybraną kwotą: domyślnie całość,
+a suwak i przyciski 25%, 50%, 75% wybierają część. Spłata nie może być większa niż to, co
+zostało. Istniejące transakcje, np. z importu, dodaje się jako pozycje z menu transakcji
+w zakładce **Portfele** albo przyciskiem **Połącz transakcje…** w zakładce **Pożyczki**.
+Transakcja należy najwyżej do jednej pożyczki w tej samej walucie. Transakcje pożyczek
+zmieniają saldo, ale jak przelewy nie liczą się do przychodów, wydatków ani budżetów
+w raportach; tagi liczą je dalej. Usunięcie pozycji lub pożyczki zostawia transakcję
+w portfelu i przywraca ją w raportach.
 
 Raport obejmuje miesiąc, rok albo zakres dat z oboma końcami. Wykres pokazuje 12 miesięcy
 do wybranego miesiąca, miesiące wybranego roku, a dla zakresu jego miesiące albo, przy

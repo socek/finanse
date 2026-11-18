@@ -1,4 +1,4 @@
-"""Okno główne: pasek menu, pięć zakładek z danymi i rzadziej używane strony w oknach."""
+"""Okno główne: pasek menu, sześć zakładek z danymi i rzadziej używane strony w oknach."""
 
 from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import (
@@ -23,6 +23,7 @@ from .categories_tab import CategoriesTab
 from .files_tab import FilesTab
 from .history_tab import HistoryTab
 from .import_rules_dialog import RulesDialog
+from .loans_tab import LoansTab
 from .products_tab import ProductsTab
 from .recurring_tab import PAY, RecurringTab
 from .reports_tab import ReportsTab
@@ -94,6 +95,7 @@ class MainWindow(QMainWindow):
         self.recurring = RecurringTab(db)
         self.reports = ReportsTab(db)
         self.categories = CategoriesTab(db)
+        self.loans = LoansTab(db)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.wallets, "Portfele")
@@ -101,6 +103,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.recurring, "Cykliczne")
         self.tabs.addTab(self.reports, "Raporty")
         self.tabs.addTab(self.categories, "Kategorie i tagi")
+        self.tabs.addTab(self.loans, "Pożyczki")
         # Każda zakładka czyta z bazy przy wejściu, więc widzi zmiany z pozostałych.
         self.tabs.currentChanged.connect(lambda _: self.tabs.currentWidget().refresh())
         # Liczba zaległych płatności w nazwie zakładki; data mogła się zmienić od startu.
@@ -140,6 +143,7 @@ class MainWindow(QMainWindow):
             "new_transfer": lambda: self._after(self.wallets.create_transfer),
             "new_wallet": lambda: self._after(self.wallets.create_wallet),
             "new_recurring": lambda: self._after(self.recurring.create),
+            "new_loan": self.new_loan,
             "import_csv": lambda: self._wallet_action(self.wallets.import_csv),
             "edit_wallet": lambda: self._wallet_action(self.wallets.edit_wallet),
             "delete_wallet": lambda: self._wallet_action(self.wallets.delete_wallet),
@@ -184,6 +188,7 @@ class MainWindow(QMainWindow):
         self._item(file_menu, "Nowa transakcja…", act["new_transaction"], "new_transaction")
         self._item(file_menu, "Nowy przelew…", act["new_transfer"], "new_transfer")
         self._item(file_menu, "Nowa transakcja cykliczna…", act["new_recurring"], "new_recurring")
+        self._item(file_menu, "Nowa pożyczka…", act["new_loan"], "new_loan")
         self._item(file_menu, "Nowy portfel…", act["new_wallet"], "new_wallet")
         file_menu.addSeparator()
         self._item(file_menu, "Import CSV do portfela…", act["import_csv"], "import_csv",
@@ -263,6 +268,15 @@ class MainWindow(QMainWindow):
         self._item(transaction_menu, "Zawieś lub wznów transakcję cykliczną",
                    self.recurring.toggle_suspended, enabled=self._can_suspend)  # fmt: skip
         transaction_menu.addSeparator()
+        self._item(transaction_menu, "Spłać pożyczkę…", self.loans.repay,
+                   enabled=self._can_repay_loan)  # fmt: skip
+        self._item(transaction_menu, "Pożycz więcej…", self.loans.lend_more,
+                   enabled=self._loan_selected)  # fmt: skip
+        self._item(transaction_menu, "Połącz transakcję z pożyczką…",
+                   self.wallets.link_to_loan, enabled=self._can_link_loan)  # fmt: skip
+        self._item(transaction_menu, "Odłącz transakcję od pożyczki",
+                   self.wallets.unlink_from_loan, enabled=self._can_unlink_loan)  # fmt: skip
+        transaction_menu.addSeparator()
         self._item(transaction_menu, "Historia ceny produktu…",
                    self.products.show_price_history, enabled=self._has_product)  # fmt: skip
 
@@ -331,6 +345,8 @@ class MainWindow(QMainWindow):
             return action in ("edit", "delete") and self.recurring.selected_id() is not None
         if tab is self.categories:
             return action in ("edit", "delete") and self.categories.table.currentRow() >= 0
+        if tab is self.loans:
+            return action in ("edit", "delete") and self.loans.selected_id() is not None
         return False
 
     def _can_upload_to_drive(self):
@@ -341,7 +357,21 @@ class MainWindow(QMainWindow):
             self.products.selected_transaction() is not None
         )
 
+    def _loan_selected(self):
+        return self.tabs.currentWidget() is self.loans and self.loans.selected_id() is not None
+
+    def _can_repay_loan(self):
+        return self.tabs.currentWidget() is self.loans and self.loans.can_repay()
+
+    def _can_link_loan(self):
+        return self.tabs.currentWidget() is self.wallets and self.wallets.can_link_loan()
+
+    def _can_unlink_loan(self):
+        return self.tabs.currentWidget() is self.wallets and self.wallets.can_unlink_loan()
+
     def _can_pay(self):
+        if self.tabs.currentWidget() is self.loans:
+            return self.loans.can_repay()
         row = self.recurring.table.currentRow()
         return (
             self.tabs.currentWidget() is self.recurring
@@ -371,6 +401,8 @@ class MainWindow(QMainWindow):
             self.recurring.delete()
         elif tab is self.categories:
             self.categories.delete()
+        elif tab is self.loans:
+            self.loans.delete()
 
     def upload_to_drive(self, interactive=True):
         if self.settings.upload_to_drive(interactive):
@@ -439,6 +471,15 @@ class MainWindow(QMainWindow):
         self.refresh_all_tabs()
         self.show_due_count(count_due(self.db))
         self.history.refresh()
+
+    def new_loan(self):
+        """Nowa pożyczka z każdej zakładki; po zapisie pokazuje ją w zakładce Pożyczki."""
+        if self.tabs.currentWidget() is self.wallets:
+            wallet_id = self.wallets.wallet_id()
+        else:
+            wallet_id = None
+        if self.loans.create(wallet_id) is not None:
+            self.tabs.setCurrentWidget(self.loans)
 
     def new_transaction(self):
         """Działa z każdej zakładki, a po zapisie odświeża tę, która jest widoczna."""

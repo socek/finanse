@@ -356,6 +356,7 @@ def test_wallet_context_menu_replaces_buttons(db, errors, monkeypatch):
     menu = tab._wallet_menu()
     assert [action.text() for action in menu.actions()] == [
         "Nowa transakcja",
+        "Nowa pożyczka",
         "Import CSV",
         "Edytuj portfel",
         "Usuń portfel",
@@ -372,7 +373,7 @@ def test_wallet_context_menu_replaces_buttons(db, errors, monkeypatch):
     monkeypatch.setattr(TransactionDialog, "exec", exec_recording)
     menu.actions()[0].trigger()
     assert created == [wallet]
-    menu.actions()[3].trigger()
+    menu.actions()[4].trigger()
     assert list_wallets(db) == []
 
 
@@ -1012,8 +1013,10 @@ def test_transaction_can_be_deleted_from_menu_and_key(db, errors, monkeypatch):
     day.setExpanded(True)
     tab.tree.setCurrentItem(day.child(0))
     menu = tab._entry_menu()
-    assert [action.text() for action in menu.actions()] == ["Edytuj", "Duplikuj", "Usuń"]
-    menu.actions()[2].trigger()
+    assert [action.text() for action in menu.actions()] == [
+        "Edytuj", "Duplikuj", "Połącz z pożyczką…", "Usuń",
+    ]  # fmt: skip
+    menu.actions()[3].trigger()
     assert questions == ["Usunąć transakcję „Zakupy”?"]
     assert get_wallet(db, wallet)["balance_cents"] < 10000
     assert db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
@@ -1377,7 +1380,7 @@ def test_products_tab_without_wallets(db, errors):
 
 def test_main_window_refreshes_tab_on_switch(db, errors):
     window = MainWindow(db)
-    assert window.tabs.count() == 5
+    assert window.tabs.count() == 6
     create_wallet(db, "Nowy")
     window.tabs.setCurrentWidget(window.reports)
     assert window.reports.report is not None
@@ -2926,7 +2929,7 @@ def test_right_click_keeps_the_selection(db, errors, monkeypatch):
     entries = _entries(tab)
     _select(tab.tree, entries)
     tab._show_entry_menu(tab.tree.visualItemRect(entries[1]).center())
-    assert shown == ["Edytuj", "Duplikuj", "Usuń zaznaczone (2)"]
+    assert shown == ["Edytuj", "Duplikuj", "Połącz z pożyczką…", "Usuń zaznaczone (2)"]
     assert len(tab.selected_entries()) == 2
     assert tab.selected_entry() == entries[1].data(0, KEY_ROLE)
     tab.close()

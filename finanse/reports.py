@@ -5,6 +5,7 @@ import calendar
 from datetime import date, timedelta
 
 from .budgets import budget_usage
+from .loans import NOT_LOAN
 from .money import NBSP, format_money
 from .tags import tag_totals
 from .transactions import VAT_RATES
@@ -201,7 +202,7 @@ def _trend(db, wallet_ids, span, currency):
                SUM(p.total_cents) AS total
         FROM transactions t
         JOIN products p ON p.transaction_id = t.id
-        WHERE t.wallet_id IN ({marks})
+        WHERE t.wallet_id IN ({marks}) AND {NOT_LOAN}
           AND t.occurred_on >= ? AND t.occurred_on < ?
         GROUP BY month, t.kind
         """,
@@ -265,7 +266,7 @@ def _by_category(db, wallet_ids, start, end, kind, currency):
             FROM products p
             JOIN transactions t ON t.id = p.transaction_id
             LEFT JOIN categories c ON c.id = p.category_id
-            WHERE t.wallet_id IN ({marks}) AND t.kind = ?
+            WHERE t.wallet_id IN ({marks}) AND t.kind = ? AND {NOT_LOAN}
               AND t.occurred_on >= ? AND t.occurred_on < ?
             GROUP BY c.id
             HAVING total > 0
@@ -309,7 +310,7 @@ def _wallet_totals(db, wallets, start, end):
             SELECT t.wallet_id, t.kind, SUM(p.total_cents) AS total
             FROM transactions t
             JOIN products p ON p.transaction_id = t.id
-            WHERE t.wallet_id IN ({marks})
+            WHERE t.wallet_id IN ({marks}) AND {NOT_LOAN}
               AND t.occurred_on >= ? AND t.occurred_on < ?
             GROUP BY t.wallet_id, t.kind
             """,
@@ -406,7 +407,7 @@ def _budgets(db, wallet_ids, start, end, currency):
             SELECT p.category_id, SUM(p.total_cents) AS total
             FROM products p
             JOIN transactions t ON t.id = p.transaction_id
-            WHERE t.wallet_id IN ({marks}) AND t.kind = 'expense'
+            WHERE t.wallet_id IN ({marks}) AND t.kind = 'expense' AND {NOT_LOAN}
               AND t.occurred_on >= ? AND t.occurred_on < ?
               AND p.category_id IS NOT NULL
             GROUP BY p.category_id

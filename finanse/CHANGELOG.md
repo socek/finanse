@@ -2,6 +2,13 @@
 
 ## 0.3 (w przygotowaniu)
 
+- Pożyczki udzielone i zaciągnięte w nowej zakładce Pożyczki (Ctrl+6), złożone z pozycji:
+  kolejnych pożyczonych kwot i spłat, z tym, ile zostało po każdej z nich. Pozycja jest
+  transakcją w portfelu albo kwotą poza portfelami. **Pożycz więcej…** dodaje kolejną kwotę,
+  a **Spłać…** (Ctrl+P) spłaca całość albo wybraną część, suwakiem lub przyciskami 25%, 50%,
+  75%. Istniejące transakcje dodaje się jako pozycje z menu w zakładce Portfele lub przyciskiem
+  **Połącz transakcje…**. Transakcje pożyczek nie liczą się do przychodów, wydatków ani budżetów
+  w raportach.
 - Suma pod listą w zakładkach Cykliczne (wydatki i przychody) oraz Kategorie (budżety),
   osobno dla każdej waluty.
 - Zawieszanie transakcji cyklicznych przyciskiem Zawieś/Wznów. Zawieszona zostaje na liście

@@ -39,12 +39,12 @@ def item(window, menu, label):
     raise AssertionError(f"Brak „{label}” w menu {menu}")
 
 
-def test_menu_bar_order_and_five_tabs(window):
+def test_menu_bar_order_and_six_tabs(window):
     assert list(menus(window)) == [
         "Plik", "Edycja", "Widok", "Portfel", "Transakcja", "Raport", "Pomoc",
     ]  # fmt: skip
     assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == [
-        "Portfele", "Produkty", "Cykliczne", "Raporty", "Kategorie i tagi",
+        "Portfele", "Produkty", "Cykliczne", "Raporty", "Kategorie i tagi", "Pożyczki",
     ]  # fmt: skip
 
 
